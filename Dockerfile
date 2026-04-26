@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     pciutils \
     python3 \
-    python3-pip \
+    python3-venv \
     ca-certificates \
     jq \
     curl \
@@ -34,9 +34,12 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
     && apt-get install -y furiosa-toolkit-rngd \
     && rm -rf /var/lib/apt/lists/*
 
-# Install furiosa-llm
+# Install furiosa-llm into an isolated venv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 ENV PIP_EXTRA_INDEX_URL=https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple
-RUN pip install furiosa-llm==2026.1.0 pillow "urllib3<2" "more-itertools<11.0" --break-system-packages && pip uninstall torchvision -y --break-system-packages
+RUN pip install furiosa-llm==2026.1.0 pillow pyyaml "urllib3<2" "more-itertools<11.0" \
+    && pip uninstall -y torchvision
 
 COPY entrypoint.sh $VALIDATION_DIR/entrypoint.sh
 COPY scripts $VALIDATION_DIR/scripts/
