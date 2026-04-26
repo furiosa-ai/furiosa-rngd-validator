@@ -1,0 +1,39 @@
+# Runtime artifacts
+outputs/
+logs/
+
+# Stress phase fetches these into the cwd (= scripts/) at runtime.
+scripts/vllm/
+scripts/ShareGPT_V3_unfiltered_cleaned_split.json
+
+# Python bytecode and tool caches
+__pycache__/
+*.pyc
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Local Python environments and build artifacts
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+
+# Repository and editor metadata
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local secrets and credentials
+.env
+.envrc
+.pypirc
+
+# Tests
+tests/
