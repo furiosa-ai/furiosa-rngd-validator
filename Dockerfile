@@ -8,10 +8,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV RUN_TESTS=diag,p2p,stress
 
 ENV HOME=/root
-ENV VALIDATION_DIR=$HOME/furiosa-server-validation-tool
-WORKDIR $VALIDATION_DIR
+ENV VALIDATOR_DIR=$HOME/furiosa-rngd-validator
+WORKDIR $VALIDATOR_DIR
 
-ENV OUTPUT_DIR=$VALIDATION_DIR/outputs
+ENV OUTPUT_DIR=$VALIDATOR_DIR/outputs
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -44,7 +44,7 @@ ENV PIP_EXTRA_INDEX_URL=https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/s
 RUN pip install furiosa-llm==2026.1.0 pillow pyyaml "urllib3<2" "more-itertools<11.0" \
     && pip uninstall -y torchvision
 
-COPY entrypoint.sh $VALIDATION_DIR/entrypoint.sh
-COPY scripts $VALIDATION_DIR/scripts/
+COPY entrypoint.sh $VALIDATOR_DIR/entrypoint.sh
+COPY scripts $VALIDATOR_DIR/scripts/
 
-ENTRYPOINT ["/root/furiosa-server-validation-tool/entrypoint.sh"]
+ENTRYPOINT ["/root/furiosa-rngd-validator/entrypoint.sh"]
