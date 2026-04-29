@@ -38,7 +38,7 @@ Docker engine on the host. The image carries everything else.
 
 Replicate the `Dockerfile` runtime on a Debian-based distribution (Ubuntu 24.04 verified):
 
-- From the distribution's APT repository: `ca-certificates curl git gnupg jq pciutils python3-venv wget`.
+- From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
 - From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv; uninstall `torchvision` afterward (pulled in transitively, not used).
 
