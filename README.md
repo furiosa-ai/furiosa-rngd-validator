@@ -11,7 +11,7 @@ Validates a Furiosa RNGD-based server before production deployment. Three indepe
 
 ## Quick start (Docker)
 
-Requires [Docker](https://docs.docker.com/engine/install/) on the host.
+Requires [Docker](https://docs.docker.com/engine/install/) on the host. Run as root.
 
 ```bash
 export HF_TOKEN=your_huggingface_token
@@ -25,7 +25,7 @@ make build && make run
 ### Common
 
 - Furiosa RNGD driver loaded with `debugfs` mounted at `/sys/kernel/debug` (verify with `ls /sys/kernel/debug/rngd/mgmt*`).
-- Root privileges — the phases read `debugfs`, drive `setpci`, and capture `dmesg`.
+- Root user — the phases read `debugfs`, drive `setpci`, and capture `dmesg`.
 - A [Hugging Face access token](https://huggingface.co/settings/tokens) with terms-of-use accepted for both `stress`-phase models:
   - [`meta-llama/Llama-3.1-8B-Instruct`](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
   - [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
@@ -36,11 +36,11 @@ Docker engine on the host. The image carries everything else.
 
 ### Without Docker
 
-Replicate the `Dockerfile` runtime on a Debian-based distribution (Ubuntu 24.04 verified):
+As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubuntu 24.04 verified):
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv.
+- From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv (e.g., `python3 -m venv /root/venv`).
 
 ## Running
 
@@ -61,11 +61,11 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 ### Without Docker
 
 ```bash
-sudo --preserve-env=PATH HF_TOKEN=$HF_TOKEN bash entrypoint.sh                       # all phases
-sudo --preserve-env=PATH HF_TOKEN=$HF_TOKEN RUN_TESTS=stress bash entrypoint.sh      # subset
+source /root/venv/bin/activate
+export HF_TOKEN=your_huggingface_token
+bash entrypoint.sh                       # all phases
+RUN_TESTS=stress bash entrypoint.sh      # subset
 ```
-
-`sudo` strips the parent shell's environment by default; `--preserve-env=PATH` keeps the venv on `PATH` and `HF_TOKEN=$HF_TOKEN` forwards the token.
 
 ## Outputs
 
@@ -159,7 +159,7 @@ Five common failure modes.
 
 **No NPUs detected** — `/sys/kernel/debug/rngd/mgmt<N>` is missing. Confirm the driver is loaded; for Docker, confirm `-v /sys/kernel/debug:/sys/kernel/debug` and `--privileged` are present (`make run` already passes them).
 
-**`HF_TOKEN` is not set** — Export and forward the token. Docker: `-e HF_TOKEN`. Without Docker: `sudo HF_TOKEN=$HF_TOKEN bash entrypoint.sh`.
+**`HF_TOKEN` is not set** — Export `HF_TOKEN` in the shell before running.
 
 **Stress phase hangs at "Model on port X not ready"** — `furiosa-llm serve` takes minutes on first run (compilation + weight download). The default budget is `SERVE_READY_MAX_ATTEMPTS × SERVE_READY_INTERVAL` = 30 × 60 s = 30 min; tune those env vars for your environment.
 
