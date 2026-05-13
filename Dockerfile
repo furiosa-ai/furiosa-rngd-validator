@@ -41,8 +41,11 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PIP_EXTRA_INDEX_URL=https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple
-RUN pip install furiosa-llm==2026.1.0 pillow pyyaml "urllib3<2" "more-itertools<11.0" \
-    && pip uninstall -y torchvision
+# pillow: vllm benchmark scripts import PIL via `benchmark_dataset.py`.
+# pyyaml: `rngd_diag_decoder` parses the diag.yaml output from rngd-diag.
+# more-itertools<11.0: furiosa-llm 2026.1.0 imports `more_itertools.zip_equal`,
+# which was removed in 11.0.0. Removable once furiosa-llm >= 2026.3.0.
+RUN pip install --no-cache-dir furiosa-llm==2026.1.0 pillow pyyaml "more-itertools<11.0"
 
 COPY entrypoint.sh $VALIDATOR_DIR/entrypoint.sh
 COPY scripts $VALIDATOR_DIR/scripts/
