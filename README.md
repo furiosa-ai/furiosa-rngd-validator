@@ -40,7 +40,13 @@ As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubun
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv (e.g., `python3 -m venv /root/venv`).
+- From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv using `requirements.txt` (the extra index URL is already declared inside it):
+
+```bash
+python3 -m venv /root/venv
+source /root/venv/bin/activate
+pip install -r requirements.txt
+```
 
 ## Running
 

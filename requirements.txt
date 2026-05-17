@@ -1,0 +1,6 @@
+--extra-index-url https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple
+
+furiosa-llm==2026.1.0
+pillow
+pyyaml
+more-itertools<11.0
