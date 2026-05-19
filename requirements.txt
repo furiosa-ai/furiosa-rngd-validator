@@ -1,6 +1,10 @@
 --extra-index-url https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple
 
 furiosa-llm==2026.1.0
+# vllm benchmark scripts import PIL via `benchmark_dataset.py`.
 pillow
+# `rngd_diag_decoder` parses the diag.yaml output from rngd-diag.
 pyyaml
+# furiosa-llm 2026.1.0 imports `more_itertools.zip_equal`, which was removed
+# in 11.0.0. Removable once furiosa-llm >= 2026.3.0.
 more-itertools<11.0

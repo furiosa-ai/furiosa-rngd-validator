@@ -43,8 +43,8 @@ As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubun
 - From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv using `requirements.txt` (the extra index URL is already declared inside it):
 
 ```bash
-python3 -m venv /root/venv
-source /root/venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -67,7 +67,7 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 ### Without Docker
 
 ```bash
-source /root/venv/bin/activate
+source venv/bin/activate
 export HF_TOKEN=your_huggingface_token
 bash entrypoint.sh                       # all phases
 RUN_TESTS=stress bash entrypoint.sh      # subset
