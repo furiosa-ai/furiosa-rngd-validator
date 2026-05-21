@@ -7,4 +7,4 @@ pillow
 pyyaml
 # furiosa-llm 2026.1.0 imports `more_itertools.zip_equal`, which was removed
 # in 11.0.0. Removable once furiosa-llm >= 2026.3.0.
-more-itertools<11.0
+more-itertools<11.1
