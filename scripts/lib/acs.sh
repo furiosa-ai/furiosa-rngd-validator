@@ -1,7 +1,7 @@
 #!/bin/bash
-# Unified ACS (Access Control Services) walker for Broadcom PCIe switches.
-# Walks from each Furiosa endpoint up through Broadcom switches and writes
-# the ACSCtl register for every switch port that exposes the ACS capability.
+# Unified ACS (Access Control Services) walker for all PCI bridges.
+# Enumerates every PCI bridge in the system and writes the ACSCtl register
+# for each bridge that exposes the ACS capability.
 #
 # Usage: acs.sh --mode {enable|disable} [-d]
 
@@ -19,18 +19,6 @@ has_acs_cap() {
     echo "----------------------------------" >&2
   fi
   echo "$out" | grep -qiE "Access Control Services|ACSCap:|ACSCtl:"
-}
-
-is_broadcom_switch() {
-  local bdf="$1"
-  lspci -nn -s "${bdf#0000:}" 2>/dev/null | grep -qE "Broadcom|PEX8"
-}
-
-get_parent_bdf() {
-  local bdf="$1"
-  local dev="/sys/bus/pci/devices/$bdf"
-  [[ -e "$dev" ]] || return 1
-  basename "$(readlink -f "$dev/..")"
 }
 
 apply_acs_value() {
@@ -83,45 +71,20 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       ;;
   esac
 
-  mapfile -t ep_bdfs < <(lspci -D | awk '/Furi/{print $1}' | sort -u)
+  mapfile -t bridge_bdfs < <(lspci -D | awk '/PCI bridge/{print $1}' | sort -u)
 
-  [[ "${#ep_bdfs[@]}" -gt 0 ]] || {
-    echo "ERROR: No Furiosa PCI devices found"
+  [[ "${#bridge_bdfs[@]}" -gt 0 ]] || {
+    echo "ERROR: No PCI bridges found"
     exit 1
   }
 
-  declare -A visited=()
-
-  for ep in "${ep_bdfs[@]}"; do
-    echo "=== Endpoint: ${ep#0000:} ==="
-    cur="$ep"
-
-    while true; do
-      parent="$(get_parent_bdf "$cur" || true)"
-      [[ -n "${parent:-}" ]] || break
-
-      if [[ -n "${visited[$parent]+x}" ]]; then
-        [[ "$DEBUG" == "1" ]] && echo "  [DBG] Already visited ${parent#0000:}, skipping"
-        cur="$parent"
-        continue
-      fi
-      visited["$parent"]=1
-
-      if ! is_broadcom_switch "$parent"; then
-        echo "Stop at non-Broadcom port: ${parent#0000:}"
-        break
-      fi
-
-      if has_acs_cap "$parent"; then
-        apply_acs_value "$parent"
-      else
-        echo "  Broadcom port without ACS capability: ${parent#0000:}"
-      fi
-
-      cur="$parent"
-    done
-
-    echo
+  for bridge in "${bridge_bdfs[@]}"; do
+    echo "=== Bridge: ${bridge#0000:} ==="
+    if has_acs_cap "$bridge"; then
+      apply_acs_value "$bridge"
+    else
+      [[ "$DEBUG" == "1" ]] && echo "  No ACS capability for ${bridge#0000:}"
+    fi
   done
 
   echo "ACS $MODE sequence completed successfully"
