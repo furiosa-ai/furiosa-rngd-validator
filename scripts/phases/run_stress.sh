@@ -127,8 +127,8 @@ run_fixed_benchmark() {
       --result-dir "$model_results_dir" \
       --percentile-metrics "ttft,tpot,itl,e2el" \
       --metric-percentiles "25,50,75,90,95,99" \
-      --enable-device-monitor npu
-    # --save-result
+      --enable-device-monitor npu \
+      --save-result
   done
 }
 
@@ -155,8 +155,8 @@ run_sharegpt_benchmark() {
     --seed 0 \
     --result-dir "$model_results_dir" \
     --percentile-metrics "ttft,tpot,itl,e2el" \
-    --metric-percentiles "25,50,75,90,95,99"
-  # --save-result
+    --metric-percentiles "25,50,75,90,95,99" \
+    --save-result
 }
 
 MONITOR_PID=""
@@ -179,6 +179,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
+
+SECONDS=0
 
 python3 "$SCRIPTS_ROOT/lib/sensor_monitor.py" --output "$OUTPUT_STRESS" --timestamp "$TIMESTAMP" --interval "$SENSOR_POLL_INTERVAL" &
 MONITOR_PID=$!
@@ -259,6 +261,9 @@ done
 
 capture_dmesg "$OUTPUT_STRESS"
 
+DURATION_SECONDS=$SECONDS
+TOTAL_DURATION=$(printf '%02d:%02d:%02d' $((DURATION_SECONDS / 3600)) $((DURATION_SECONDS % 3600 / 60)) $((DURATION_SECONDS % 60)))
+
 SUMMARY_LOG="${OUTPUT_STRESS}/PF_result.log"
 HTML_REPORT="${OUTPUT_STRESS}/PF_result.html"
 
@@ -276,6 +281,8 @@ done
     printf "%-30s | %-10s | %-20s | %-5s\n" "$m" "$n" "$test" "$s"
   done
 
+  echo "Total Duration: $TOTAL_DURATION"
+
   if [[ $FAILED -eq 1 ]]; then
     echo -e "${RED}${BOLD}Some tests FAILED${NC}"
   else
@@ -284,6 +291,7 @@ done
 } | tee "$SUMMARY_LOG"
 
 html_init "$HTML_REPORT" "Furiosa Stress Test Summary"
+echo "    <p><strong>Total Duration:</strong> $TOTAL_DURATION</p>" >>"$HTML_REPORT"
 
 {
   echo '    <table>'
