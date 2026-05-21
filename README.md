@@ -40,7 +40,14 @@ As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubun
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, with the Furiosa private PyPI (`https://asia-northeast3-python.pkg.dev/furiosa-ai/pypi/simple`) as an extra index: `furiosa-llm==2026.1.0`, `pillow`, `pyyaml`, `more-itertools<11.0`. Install in a Python venv (e.g., `python3 -m venv /root/venv`).
+- From PyPI, install the Python dependencies in a venv using `requirements.txt` (it already includes the Furiosa private PyPI extra-index URL):
+
+```bash
+cd /path/to/furiosa-rngd-validator
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
 ## Running
 
@@ -61,7 +68,8 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 ### Without Docker
 
 ```bash
-source /root/venv/bin/activate
+cd /path/to/furiosa-rngd-validator
+source venv/bin/activate
 export HF_TOKEN=your_huggingface_token
 bash entrypoint.sh                       # all phases
 RUN_TESTS=stress bash entrypoint.sh      # subset
