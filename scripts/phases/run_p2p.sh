@@ -144,7 +144,11 @@ bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE"
 save_lspci_info "ACS_Enabled"
 run_p2p_benchmark "after ACS enable"
 
-echo "<p>If you have any questions about the throughput results, please contact Furiosa for support.</p>" >>"$HTML_FILE"
+cat <<EOF >>"$HTML_FILE"
+    <div class="section">
+        <p>If you have any questions about the throughput results, please contact Furiosa for support.</p>
+    </div>
+EOF
 html_close "$HTML_FILE"
 
 capture_dmesg "$OUTPUT_P2P"
