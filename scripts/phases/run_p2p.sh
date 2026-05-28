@@ -29,19 +29,18 @@ append_html_section() {
 
   cat <<EOF >>"$HTML_FILE"
     <div class="section">
-        <h2>>>> Benchmark Summary: $label</h2>
+        <h2>Benchmark Summary: $label</h2>
         <table>
             <tr>
                 <th>Time</th>
                 <th>P2P Path</th>
                 <th>Latency (ms)</th>
                 <th>Throughput (GiB/s)</th>
-                <th>Pass/Fail</th>
             </tr>
 EOF
   for entry in "${data[@]}"; do
     IFS='|' read -r r_time r_path r_lat r_thr <<<"$entry"
-    echo "<tr><td>$r_time</td><td>$r_path</td><td class='val-text'>$r_lat</td><td class='val-text'>$r_thr</td><td class='status-warn'>[Contact Furiosa Support]</td></tr>" >>"$HTML_FILE"
+    echo "<tr><td>$r_time</td><td>$r_path</td><td class='val-text'>$r_lat</td><td class='val-text'>$r_thr</td></tr>" >>"$HTML_FILE"
   done
   echo "</table></div>" >>"$HTML_FILE"
 }
@@ -107,14 +106,14 @@ run_p2p_benchmark() {
     echo -e "${CYAN}======================================================================================================================================================${NC}"
     echo -e "${CYAN}${BOLD}                                            P2P BENCHMARK SUMMARY REPORT ($label)${NC}"
     echo -e "${CYAN}======================================================================================================================================================${NC}"
-    printf "${BOLD}%-10s | %-15s | %-40s | %-40s | %-25s${NC}\n" \
-      "Time" "P2P Path" "Latency (ms)" "Throughput (GiB/s)" "PASS/FAIL"
+    printf "${BOLD}%-10s | %-15s | %-40s | %-40s${NC}\n" \
+      "Time" "P2P Path" "Latency (ms)" "Throughput (GiB/s)"
     echo -e "${CYAN}------------------------------------------------------------------------------------------------------------------------------------------------------${NC}"
 
     for entry in "${SUMMARY_DATA[@]}"; do
       IFS='|' read -r r_time r_path r_lat r_thr <<<"$entry"
-      printf "%-10s | %-15s | ${GREEN}%-40s${NC} | ${GREEN}%-40s${NC} | ${YELLOW}%-25s${NC}\n" \
-        "$r_time" "$r_path" "$r_lat" "$r_thr" "[Contact Furiosa Support]"
+      printf "%-10s | %-15s | ${GREEN}%-40s${NC} | ${GREEN}%-40s${NC}\n" \
+        "$r_time" "$r_path" "$r_lat" "$r_thr"
     done
 
     echo -e "${CYAN}======================================================================================================================================================${NC}"
@@ -145,6 +144,7 @@ bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE"
 save_lspci_info "ACS_Enabled"
 run_p2p_benchmark "after ACS enable"
 
+echo "<p>If you have any questions about the throughput results, please contact Furiosa for support.</p>" >>"$HTML_FILE"
 html_close "$HTML_FILE"
 
 capture_dmesg "$OUTPUT_P2P"
