@@ -78,27 +78,34 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         '    <meta charset="utf-8">',
         "    <title>Furiosa RNGD Validator Run Report</title>",
         "    <style>",
-        "        body { font-family: 'Segoe UI', sans-serif; margin: 30px; background-color: #f4f7f6; color: #333; }",
+        "        body { font-family: 'Segoe UI', sans-serif; margin: 30px;"
+        " background-color: #f4f7f6; color: #333; }",
         "        h1, h2 { color: #2c3e50; }",
         "        h2 { margin-top: 0; }",
-        "        .meta { background: white; padding: 16px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 24px; }",
+        "        .meta { background: white; padding: 16px; border-radius: 6px;"
+        " box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 24px; }",
         "        .meta dt { font-weight: bold; }",
         "        .meta dd { margin: 0 0 8px 0; }",
         "        ul.phases { list-style: none; padding: 0; }",
-        "        ul.phases > li { background: white; border-radius: 6px; margin-bottom: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }",
-        "        details > summary { display: flex; align-items: center; gap: 8px; padding: 12px 16px; cursor: pointer; list-style: none; }",
+        "        ul.phases > li { background: white; border-radius: 6px;"
+        " margin-bottom: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }",
+        "        details > summary { display: flex; align-items: center; gap: 8px;"
+        " padding: 12px 16px; cursor: pointer; list-style: none; }",
         "        details > summary::-webkit-details-marker { display: none; }",
         "        details > summary::marker { display: none; }",
-        "        .toggle-arrow { color: #7f8c8d; font-size: 0.75em; transition: transform 0.15s; display: inline-block; }",
+        "        .toggle-arrow { color: #7f8c8d; font-size: 0.75em;"
+        " transition: transform 0.15s; display: inline-block; }",
         "        details[open] .toggle-arrow { transform: rotate(90deg); }",
         "        .phase-name { font-weight: bold; color: #2c3e50; flex: 1; }",
         "        .phase-detail { padding: 16px; border-top: 1px solid #eee; }",
-        "        .no-report { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }",
+        "        .no-report { padding: 12px 16px; display: flex;"
+        " justify-content: space-between; align-items: center; }",
         "        .pass { color: #27ae60; font-weight: bold; }",
         "        .fail { color: #e74c3c; font-weight: bold; }",
         "        .unknown { color: #7f8c8d; font-weight: bold; }",
         "        .section { padding: 0 0 16px 0; }",
-        "        table { width: 100%; border-collapse: collapse; margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }",
+        "        table { width: 100%; border-collapse: collapse;"
+        " margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }",
         "        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }",
         "        th { background-color: #34495e; color: white; }",
         "        tr:nth-child(even) { background-color: #f9f9f9; }",
@@ -106,7 +113,9 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         "        .status-warn { color: #f39c12; font-weight: bold; }",
         "        .footer { margin-top: 20px; font-weight: bold; font-size: 1.1em; }",
         "        .npu-section { margin-bottom: 24px; }",
-        "        .npu-title { background-color: #2c3e50; color: white; padding: 8px 16px; border-radius: 4px 4px 0 0; display: inline-block; min-width: 120px; font-weight: bold; }",
+        "        .npu-title { background-color: #2c3e50; color: white;"
+        " padding: 8px 16px; border-radius: 4px 4px 0 0;"
+        " display: inline-block; min-width: 120px; font-weight: bold; }",
         "    </style>",
         "</head>",
         "<body>",
@@ -135,7 +144,11 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
                 lines += [
                     "        <li>",
                     f'            <details{open_attr}>',
-                    f'                <summary><span class="toggle-arrow">&#9658;</span><span class="phase-name">{phase_name}</span><span class="{status}">{status.upper()}</span></summary>',
+                    f'                <summary>'
+                    f'<span class="toggle-arrow">&#9658;</span>'
+                    f'<span class="phase-name">{phase_name}</span>'
+                    f'<span class="{status}">{status.upper()}</span>'
+                    f'</summary>',
                     '                <div class="phase-detail">',
                     content,
                     "                </div>",
@@ -143,7 +156,12 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
                     "        </li>",
                 ]
             else:
-                lines.append(f'        <li class="no-report"><span class="phase-name">{phase_name}</span><span class="{status}">{status.upper()}</span></li>')
+                lines.append(
+                    f'        <li class="no-report">'
+                    f'<span class="phase-name">{phase_name}</span>'
+                    f'<span class="{status}">{status.upper()}</span>'
+                    f"</li>",
+                )
     lines += [
         "    </ul>",
         "</body>",

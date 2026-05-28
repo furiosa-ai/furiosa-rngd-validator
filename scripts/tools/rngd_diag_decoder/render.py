@@ -64,7 +64,10 @@ def generate_html_report(all_results: list[tuple[str, str, str]], filename: str)
 """
         for item, res_text in npu_groups[npu_id]:
             res_class = "pass" if "PASS" in res_text else "fail"
-            html += f"            <tr><td>{item}</td><td class=\"{res_class}\">{strip_ansi(res_text)}</td></tr>\n"
+            html += (
+                f"            <tr><td>{item}</td>"
+                f'<td class="{res_class}">{strip_ansi(res_text)}</td></tr>\n'
+            )
         html += "            </tbody>\n        </table>\n    </div>\n"
 
     with open(filename, "w", encoding="utf-8") as f:
