@@ -127,7 +127,6 @@ run_fixed_benchmark() {
       --result-dir "$model_results_dir" \
       --percentile-metrics "ttft,tpot,itl,e2el" \
       --metric-percentiles "25,50,75,90,95,99" \
-      --enable-device-monitor npu \
       --save-result
   done
 }
