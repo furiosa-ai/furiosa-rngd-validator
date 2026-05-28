@@ -1,6 +1,7 @@
 VERSION ?= 2026.1.0
 IMAGE := furiosa-rngd-validator:$(VERSION)
 RUN_TESTS ?= diag,p2p,stress
+HF_CACHE_DIR ?= $(HOME)/.cache/huggingface
 
 SHELL_SCRIPTS := \
 	entrypoint.sh \
@@ -28,6 +29,7 @@ run:
 	    -v /sys/kernel/debug:/sys/kernel/debug \
 	    -v /lib/modules:/lib/modules:ro \
 	    -v $(CURDIR)/outputs:/root/furiosa-rngd-validator/outputs \
+	    -v $(HF_CACHE_DIR):/root/.cache/huggingface \
 	    -e HF_TOKEN \
 	    -e RUN_TESTS=$(RUN_TESTS) \
 	    $(IMAGE)
