@@ -24,11 +24,19 @@ LOG_FILE="${OUTPUT_DIAG}/result_diag.log"
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-DIAG_BIN="$VALIDATOR_DIR/scripts/bin/rngd-diag"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  aarch64) DIAG_BIN="$VALIDATOR_DIR/scripts/bin/rngd-diag-arm64" ;;
+  x86_64) DIAG_BIN="$VALIDATOR_DIR/scripts/bin/rngd-diag-amd64" ;;
+  *)
+    echo "ERROR: Unsupported architecture: $ARCH"
+    exit 1
+    ;;
+esac
 TOOLS_DIR="$VALIDATOR_DIR/scripts/tools"
 
 [[ -x "$DIAG_BIN" ]] || {
-  echo "ERROR: rngd-diag not found"
+  echo "ERROR: $(basename "$DIAG_BIN") not found or not executable"
   exit 1
 }
 [[ -d "$TOOLS_DIR/rngd_diag_decoder" ]] || {
@@ -44,7 +52,7 @@ echo "Hardware Vendor: $VENDOR"
 echo "Hardware Model:  $MODEL"
 echo "------------------------------------------"
 
-echo "[1/2] Running rngd-diag..."
+echo "[1/2] Running $(basename "$DIAG_BIN") ($ARCH)..."
 "$DIAG_BIN" -o "$YAML_NAME"
 
 echo "[2/2] Decoding result..."

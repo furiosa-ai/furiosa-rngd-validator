@@ -24,6 +24,7 @@ make build && make run
 
 ### Common
 
+- Host architecture: `x86_64` or `aarch64`.
 - Furiosa RNGD driver loaded with `debugfs` mounted at `/sys/kernel/debug` (verify with `ls /sys/kernel/debug/rngd/mgmt*`).
 - Root user — the phases read `debugfs`, drive `setpci`, and capture `dmesg`.
 - A [Hugging Face access token](https://huggingface.co/settings/tokens) with terms-of-use accepted for both `stress`-phase models:
@@ -40,7 +41,7 @@ As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubun
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, install the Python dependencies in a venv using `requirements.txt` (it already includes the Furiosa private PyPI extra-index URL):
+- From PyPI, install the Python dependencies in a venv using `requirements.txt`:
 
 ```bash
 cd /path/to/furiosa-rngd-validator
