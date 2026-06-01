@@ -1,6 +1,6 @@
 # Furiosa RNGD Validator
 
-Validates a Furiosa RNGD-based server before production deployment. Three independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `stress` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans, `summary.json` for tooling, per-phase `PF_result.html` for drill-down.
+Validates a Furiosa RNGD-based server before production deployment. Three independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `stress` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans (phase reports embedded inline as collapsible sections), `summary.json` for tooling.
 
 **Sections:**
 
@@ -81,15 +81,15 @@ Every run writes one timestamped tree under `outputs/`:
 
 ```
 outputs/run_<TIMESTAMP>/
-├── index.html        # entry point — open this first
+├── index.html        # entry point — open this first (all phase reports embedded inline)
 ├── summary.json      # machine-readable summary
-├── diag/             # PF_result.{log,html}, diag.yaml, dmesg_*.log, exit_code.txt
-├── p2p/              # PF_result.{log,html}, lspci-*, dmesg_*.log, exit_code.txt
-├── stress/           # PF_result.{log,html}, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
+├── diag/             # PF_result.log, diag.yaml, dmesg_*.log, exit_code.txt
+├── p2p/              # PF_result.log, lspci-*, dmesg_*.log, exit_code.txt
+├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
 └── logs/stress/      # per-model per-NPU serve.log / fixed.log / sharegpt.log
 ```
 
-`index.html` lists each phase's PASS/FAIL with a link to its `PF_result.html`. `summary.json` carries the same machine-readably, plus host metadata:
+`index.html` embeds each phase's PASS/FAIL report inline as a collapsible section (failed phases are expanded by default). `summary.json` carries the same machine-readably, plus host metadata:
 
 ```json
 {
@@ -100,9 +100,9 @@ outputs/run_<TIMESTAMP>/
   "run_dir": "/root/furiosa-rngd-validator/outputs/run_20260512_140000",
   "overall_status": "pass",
   "phases": [
-    {"phase": "diag",   "exit_code": 0, "status": "pass", "report": "diag/PF_result.html"},
-    {"phase": "p2p",    "exit_code": 0, "status": "pass", "report": "p2p/PF_result.html"},
-    {"phase": "stress", "exit_code": 0, "status": "pass", "report": "stress/PF_result.html"}
+    {"phase": "diag",   "exit_code": 0, "status": "pass"},
+    {"phase": "p2p",    "exit_code": 0, "status": "pass"},
+    {"phase": "stress", "exit_code": 0, "status": "pass"}
   ]
 }
 ```

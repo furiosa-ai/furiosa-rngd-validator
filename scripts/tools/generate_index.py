@@ -44,8 +44,9 @@ def discover_phases(run_dir):
     """Scan `run_dir` for phase output directories and collect their metadata.
 
     Returns:
-        A list of dicts with `phase`, `report` (relative path or None), and
-        `exit_code` keys, in PHASES order.
+        A list of dicts with `phase`, `report` (relative path or None),
+        `content` (HTML fragment string or None), and `exit_code` keys,
+        in PHASES order.
     """
     found = []
     for phase in PHASES:
@@ -54,16 +55,22 @@ def discover_phases(run_dir):
             continue
         report = phase_dir / "PF_result.html"
         rel_report = report.relative_to(run_dir) if report.exists() else None
+        content = report.read_text(encoding="utf-8") if report.exists() else None
         found.append({
             "phase": phase,
             "report": rel_report,
+            "content": content,
             "exit_code": read_exit_code(phase_dir),
         })
     return found
 
 
 def render_html(run_dir, phases, hostname, vendor, model, generated_at):
-    """Render the run-level index.html as a string."""
+    """Render the run-level index.html as a string.
+
+    Phase reports are embedded inline as collapsible <details> toggles.
+    Failed phases are expanded by default; passed/unknown phases are collapsed.
+    """
     lines = [
         "<!DOCTYPE html>",
         "<html>",
@@ -71,37 +78,44 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         '    <meta charset="utf-8">',
         "    <title>Furiosa RNGD Validator Run Report</title>",
         "    <style>",
-        "        body {",
-        "            font-family: sans-serif;",
-        "            margin: 30px;",
-        "            background-color: #f4f7f6;",
-        "            color: #333;",
-        "        }",
+        "        body { font-family: 'Segoe UI', sans-serif; margin: 30px;"
+        " background-color: #f4f7f6; color: #333; }",
         "        h1, h2 { color: #2c3e50; }",
-        "        .meta {",
-        "            background: white;",
-        "            padding: 16px;",
-        "            border-radius: 6px;",
-        "            box-shadow: 0 2px 4px rgba(0,0,0,0.05);",
-        "            margin-bottom: 24px;",
-        "        }",
+        "        h2 { margin-top: 0; }",
+        "        .meta { background: white; padding: 16px; border-radius: 6px;"
+        " box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 24px; }",
         "        .meta dt { font-weight: bold; }",
         "        .meta dd { margin: 0 0 8px 0; }",
         "        ul.phases { list-style: none; padding: 0; }",
-        "        ul.phases li {",
-        "            background: white;",
-        "            padding: 12px 16px;",
-        "            border-radius: 6px;",
-        "            margin-bottom: 8px;",
-        "            box-shadow: 0 2px 4px rgba(0,0,0,0.05);",
-        "            display: flex;",
-        "            justify-content: space-between;",
-        "        }",
-        "        ul.phases a { color: #2c3e50; font-weight: bold; text-decoration: none; }",
-        "        ul.phases a:hover { text-decoration: underline; }",
+        "        ul.phases > li { background: white; border-radius: 6px;"
+        " margin-bottom: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }",
+        "        details > summary { display: flex; align-items: center; gap: 8px;"
+        " padding: 12px 16px; cursor: pointer; list-style: none; }",
+        "        details > summary::-webkit-details-marker { display: none; }",
+        "        details > summary::marker { display: none; }",
+        "        .toggle-arrow { color: #7f8c8d; font-size: 0.75em;"
+        " transition: transform 0.15s; display: inline-block; }",
+        "        details[open] .toggle-arrow { transform: rotate(90deg); }",
+        "        .phase-name { font-weight: bold; color: #2c3e50; flex: 1; }",
+        "        .phase-detail { padding: 16px; border-top: 1px solid #eee; }",
+        "        .no-report { padding: 12px 16px; display: flex;"
+        " justify-content: space-between; align-items: center; }",
         "        .pass { color: #27ae60; font-weight: bold; }",
         "        .fail { color: #e74c3c; font-weight: bold; }",
         "        .unknown { color: #7f8c8d; font-weight: bold; }",
+        "        .section { padding: 0 0 16px 0; }",
+        "        table { width: 100%; border-collapse: collapse;"
+        " margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }",
+        "        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }",
+        "        th { background-color: #34495e; color: white; }",
+        "        tr:nth-child(even) { background-color: #f9f9f9; }",
+        "        .val-text { color: #27ae60; font-weight: bold; }",
+        "        .status-warn { color: #f39c12; font-weight: bold; }",
+        "        .footer { margin-top: 20px; font-weight: bold; font-size: 1.1em; }",
+        "        .npu-section { margin-bottom: 24px; }",
+        "        .npu-title { background-color: #2c3e50; color: white;"
+        " padding: 8px 16px; border-radius: 4px 4px 0 0;"
+        " display: inline-block; min-width: 120px; font-weight: bold; }",
         "    </style>",
         "</head>",
         "<body>",
@@ -119,16 +133,35 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         '    <ul class="phases">',
     ]
     if not phases:
-        lines.append("        <li>No phase reports found.</li>")
+        lines.append('        <li class="no-report">No phase reports found.</li>')
     else:
         for entry in phases:
             status = status_label(entry["exit_code"])
-            link = (
-                f'<a href="{entry["report"]}">{entry["phase"]}</a>'
-                if entry["report"]
-                else entry["phase"]
-            )
-            lines.append(f'        <li>{link}<span class="{status}">{status.upper()}</span></li>')
+            content = entry.get("content")
+            phase_name = entry["phase"]
+            if content is not None:
+                open_attr = " open" if status == "fail" else ""
+                lines += [
+                    "        <li>",
+                    f'            <details{open_attr}>',
+                    f'                <summary>'
+                    f'<span class="toggle-arrow">&#9658;</span>'
+                    f'<span class="phase-name">{phase_name}</span>'
+                    f'<span class="{status}">{status.upper()}</span>'
+                    f'</summary>',
+                    '                <div class="phase-detail">',
+                    content,
+                    "                </div>",
+                    "            </details>",
+                    "        </li>",
+                ]
+            else:
+                lines.append(
+                    f'        <li class="no-report">'
+                    f'<span class="phase-name">{phase_name}</span>'
+                    f'<span class="{status}">{status.upper()}</span>'
+                    f"</li>",
+                )
     lines += [
         "    </ul>",
         "</body>",
@@ -166,6 +199,11 @@ def main():
     index_path.write_text(html)
     print(f"Wrote {index_path}")
 
+    for entry in phases:
+        if entry["report"]:
+            fragment = run_dir / entry["report"]
+            fragment.unlink(missing_ok=True)
+
     overall = "pass"
     for entry in phases:
         st = status_label(entry["exit_code"])
@@ -187,7 +225,6 @@ def main():
                 "phase": e["phase"],
                 "exit_code": e["exit_code"],
                 "status": status_label(e["exit_code"]),
-                "report": str(e["report"]) if e["report"] else None,
             }
             for e in phases
         ],

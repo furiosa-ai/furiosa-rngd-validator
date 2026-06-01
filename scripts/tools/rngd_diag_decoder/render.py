@@ -2,6 +2,7 @@
 
 import collections
 import sys
+from datetime import datetime
 from typing import IO
 
 GREEN = "\033[92m"
@@ -41,75 +42,33 @@ class Logger:
 
 
 def generate_html_report(all_results: list[tuple[str, str, str]], filename: str) -> None:
-    """Render the per-NPU PASS/FAIL HTML report to `filename`."""
+    """Render the per-NPU PASS/FAIL HTML fragment to `filename`.
+
+    Writes a fragment (no <html>/<head>/<body> wrapper) so that
+    generate_index.py can embed it directly inside index.html.
+    """
     npu_groups: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
     for npu_id, item, res_text in all_results:
         npu_groups[npu_id].append((item, res_text))
 
-    html = """
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                margin: 40px;
-                color: #333;
-            }
-            .npu-section { margin-bottom: 50px; }
-            .npu-title {
-                background-color: #2c3e50;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px 5px 0 0;
-                display: inline-block;
-                min-width: 150px;
-                font-weight: bold;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 0;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-            th { background-color: #f8f9fa; color: #555; font-weight: bold; width: 25%; }
-            tr:nth-child(even) { background-color: #fdfdfd; }
-            .pass { color: #27ae60; font-weight: bold; }
-            .fail { color: #e74c3c; font-weight: bold; }
-            h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        </style>
-    </head>
-    <body>
-        <h1>Furiosa HW Component Health Check Report</h1>
-    """
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    html = "    <h2>Furiosa HW Component Health Check Report</h2>\n"
+    html += f"    <p><strong>Generated:</strong> {generated}</p>\n"
 
     for npu_id in sorted(npu_groups.keys()):
-        html += f"""
-        <div class="npu-section">
-            <div class="npu-title">{npu_id.upper()} Status</div>
-            <table>
-                <thead><tr><th>ITEM</th><th>RESULT</th></tr></thead>
-                <tbody>
-        """
+        html += f"""    <div class="npu-section">
+        <div class="npu-title">{npu_id.upper()} Status</div>
+        <table>
+            <thead><tr><th>ITEM</th><th>RESULT</th></tr></thead>
+            <tbody>
+"""
         for item, res_text in npu_groups[npu_id]:
             res_class = "pass" if "PASS" in res_text else "fail"
-            html += f"""
-                    <tr>
-                        <td>{item}</td>
-                        <td class="{res_class}">{strip_ansi(res_text)}</td>
-                    </tr>
-            """
-        html += """
-                </tbody>
-            </table>
-        </div>
-        """
-
-    html += """
-    </body>
-    </html>
-    """
+            html += (
+                f"            <tr><td>{item}</td>"
+                f'<td class="{res_class}">{strip_ansi(res_text)}</td></tr>\n'
+            )
+        html += "            </tbody>\n        </table>\n    </div>\n"
 
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html)
