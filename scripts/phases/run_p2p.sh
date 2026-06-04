@@ -1,10 +1,10 @@
 #!/bin/bash
 # P2P bandwidth benchmark phase.
 # Runs `furiosa-hal-bench p2p` between every NPU pair twice -- once with
-# ACS disabled on the upstream Broadcom switches, once with ACS
-# re-enabled -- so the two sets of numbers can be compared. The
-# EXIT/INT/TERM trap always restores ACS, so an aborted run never leaves
-# the host with ACS disabled.
+# ACS disabled on all upstream PCI bridges, once with ACS re-enabled --
+# so the two sets of numbers can be compared. The EXIT/INT/TERM trap
+# always restores ACS to its pre-run state, so an aborted run never
+# leaves the host with a different ACS configuration than it started with.
 
 set -euo pipefail
 
@@ -126,13 +126,29 @@ html_init "$HTML_FILE" "Furiosa P2P Benchmark Report"
 
 echo -e "${BOLD}All results will be saved in: ${YELLOW}$OUTPUT_P2P${NC}" | tee -a "$LOG_FILE"
 
-restore_acs() {
-  echo -e "\n${YELLOW}[cleanup] Restoring ACS to enabled state...${NC}" | tee -a "$LOG_FILE" || true
-  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE" || true
+ACS_STATE_FILE=$(mktemp)
+
+# The ACS restore runs on EXIT only. INT/TERM just re-exit so that an aborted
+# run funnels through the EXIT handler instead of resuming past the interrupted
+# benchmark -- otherwise execution would fall through to the ACS enable step and
+# leave the host with ACS changed despite the "restore on abort" guarantee.
+cleanup() {
+  # Ignore repeat INT/TERM so the restore runs atomically; the acs.sh child
+  # inherits this SIG_IGN across exec and so cannot be killed mid-restore.
+  trap '' INT TERM
+  echo -e "\n${YELLOW}[cleanup] Restoring ACS to initial state...${NC}" | tee -a "$LOG_FILE" || true
+  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode restore "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE" || true
+  save_lspci_info "restored" || true
+  rm -f "$ACS_STATE_FILE"
 }
-trap restore_acs EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+save_lspci_info "initial"
 
 echo -e "\n${BOLD}[STEP 1] ACS Disable Sequence${NC}" | tee -a "$LOG_FILE"
+bash "$SCRIPTS_ROOT/lib/acs.sh" --mode save "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
 bash "$SCRIPTS_ROOT/lib/acs.sh" --mode disable 2>&1 | tee -a "$LOG_FILE"
 save_lspci_info "ACS_Disabled"
 run_p2p_benchmark "after ACS disable"

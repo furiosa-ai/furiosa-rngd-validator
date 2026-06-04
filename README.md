@@ -130,7 +130,7 @@ Runs `rngd-diag` to capture per-NPU sensor readings, PCIe link state, AER counte
 
 ### `p2p` — NPU-to-NPU bandwidth
 
-Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabling ACS on the upstream Broadcom switches, once after restoring it. The two passes are reported side-by-side so the effect of ACS can be compared. There is no built-in throughput or latency threshold; operators apply their own target spec for the host platform.
+Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabling ACS on all upstream PCI bridges, once after re-enabling it. On exit the host's original ACS state is restored. The two passes are reported side-by-side so the effect of ACS can be compared. There is no built-in throughput or latency threshold; operators apply their own target spec for the host platform.
 
 **Pass:** `furiosa-hal-bench` completes without error in both passes.
 
@@ -171,7 +171,7 @@ Five common failure modes.
 
 **Stress phase hangs at "Model on port X not ready"** — `furiosa-llm serve` takes minutes on first run (compilation + weight download). The default budget is `SERVE_READY_MAX_ATTEMPTS × SERVE_READY_INTERVAL` = 30 × 60 s = 30 min; tune those env vars for your environment.
 
-**ACS appears left disabled after a `p2p` abort** — `run_p2p.sh` installs an `EXIT/INT/TERM` trap that re-runs `lib/acs.sh --mode enable` on abort, so normal aborts should restore it. Verify with `sudo lspci -vvv -s <bdf> | grep ACSCtl:` (expect `+` flags); restore manually with `sudo bash scripts/lib/acs.sh --mode enable`.
+**ACS not restored after a `p2p` abort** — `run_p2p.sh` saves the host's ACS state before disabling it and installs an `EXIT/INT/TERM` trap that restores it on exit, so a normal abort returns ACS to its pre-run state. A `SIGKILL` (e.g. `docker kill`) bypasses the trap and can leave ACS in a non-original state; reboot to re-apply the firmware ACS configuration.
 
 **First stress run downloads `vllm` and `ShareGPT_V3_unfiltered_cleaned_split.json` into `scripts/`.** Non-Docker runs reuse them on subsequent runs. Docker runs use `--rm` and re-download each time; for repeated or air-gapped Docker use, bake the artifacts into the image. For air-gapped non-Docker use, prime the caches on a connected host first and copy them over.
 
