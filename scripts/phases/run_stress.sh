@@ -162,11 +162,18 @@ MONITOR_PID=""
 declare -a serve_pids=()
 declare -a serve_ports=()
 
+# Cleanup runs on EXIT only. INT/TERM just re-exit so that an aborted run
+# funnels through the EXIT handler instead of resuming past the interrupted
+# workload (which would leave serving processes and the sensor monitor running).
 # SC2329 (function never invoked) -- cleanup runs via `trap` below; shellcheck
 # cannot follow indirect trap invocations.
-# shellcheck disable=SC2329
+# SC2317 (command unreachable) -- shellcheck cannot follow control flow past
+# `trap '' INT TERM` inside the handler.
+# shellcheck disable=SC2329,SC2317
 cleanup() {
-  trap - EXIT INT TERM
+  # Ignore repeat INT/TERM so teardown completes atomically; children inherit
+  # this SIG_IGN across exec.
+  trap '' INT TERM
   if [[ ${#serve_pids[@]} -gt 0 ]]; then
     echo -e "\n${CYAN}[cleanup] Stopping serving processes...${NC}" >&2 || true
     stop_serving "${serve_pids[@]}" || true
@@ -177,7 +184,9 @@ cleanup() {
     wait "$MONITOR_PID" 2>/dev/null || true
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 SECONDS=0
 
