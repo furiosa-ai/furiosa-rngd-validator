@@ -88,8 +88,15 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 cd /path/to/furiosa-rngd-validator
 source venv/bin/activate
 export HF_TOKEN=your_huggingface_token
-bash entrypoint.sh                       # all phases
-RUN_TESTS=stress bash entrypoint.sh      # subset
+bash entrypoint.sh                            # all phases
+RUN_TESTS=stress bash entrypoint.sh           # subset
+VALIDATE_NPUS=0 bash entrypoint.sh            # NPU 0 only
+```
+
+If `furiosa-llm` lives in a virtualenv other than `<repo-root>/venv`, set `FURIOSA_VENV` before running:
+
+```bash
+FURIOSA_VENV=/opt/furiosa/venv bash entrypoint.sh
 ```
 
 ## Outputs

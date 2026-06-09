@@ -251,8 +251,8 @@ for model_entry in "${MODELS[@]}"; do
       --served-model-name "$served_model_name" \
       >"$LOG_STRESS/${model}/npu${npu}/serve.log" 2>&1 &
 
-    serve_pids[$npu]=$!
-    serve_ports[$npu]=$port
+    serve_pids[npu]=$!
+    serve_ports[npu]=$port
   done
 
   sleep 5
@@ -270,15 +270,15 @@ for model_entry in "${MODELS[@]}"; do
   for npu in "${NPUS[@]}"; do
     result_dir="$OUTPUT_STRESS/${model}/npu${npu}"
     mkdir -p "$result_dir"
-    run_random_benchmark "${serve_ports[$npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/random.log" 2>&1 &
-    random_pids[$npu]=$!
+    run_random_benchmark "${serve_ports[npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/random.log" 2>&1 &
+    random_pids[npu]=$!
   done
 
   declare -a random_results=()
   for npu in "${NPUS[@]}"; do
     rc=0
-    wait "${random_pids[$npu]}" || rc=$?
-    random_results[$npu]=$rc
+    wait "${random_pids[npu]}" || rc=$?
+    random_results[npu]=$rc
     if [[ $rc -ne 0 ]]; then
       echo "NPU $npu random benchmark FAILED (exit $rc)" | tee -a "$LOG_STRESS/${model}/npu${npu}/random.log"
     fi
@@ -288,17 +288,17 @@ for model_entry in "${MODELS[@]}"; do
   for npu in "${NPUS[@]}"; do
     result_dir="$OUTPUT_STRESS/${model}/npu${npu}"
     mkdir -p "$result_dir"
-    run_sharegpt_benchmark "${serve_ports[$npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/sharegpt.log" 2>&1 &
-    sharegpt_pids[$npu]=$!
+    run_sharegpt_benchmark "${serve_ports[npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/sharegpt.log" 2>&1 &
+    sharegpt_pids[npu]=$!
   done
 
   for npu in "${NPUS[@]}"; do
     sharegpt_result=0
-    wait "${sharegpt_pids[$npu]}" || sharegpt_result=$?
+    wait "${sharegpt_pids[npu]}" || sharegpt_result=$?
     if [[ $sharegpt_result -ne 0 ]]; then
       echo "NPU $npu sharegpt benchmark FAILED (exit $sharegpt_result)" | tee -a "$LOG_STRESS/${model}/npu${npu}/sharegpt.log"
     fi
-    if [[ ${random_results[$npu]} -eq 0 ]] && [[ $sharegpt_result -eq 0 ]]; then
+    if [[ ${random_results[npu]} -eq 0 ]] && [[ $sharegpt_result -eq 0 ]]; then
       SUMMARY_DATA+=("$model|NPU $npu|Random+ShareGPT|PASS")
     else
       SUMMARY_DATA+=("$model|NPU $npu|Random+ShareGPT|FAIL")

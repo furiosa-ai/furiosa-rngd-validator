@@ -2,6 +2,7 @@
 VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements-furiosa.txt)
 IMAGE := furiosa-rngd-validator:$(VERSION)
 RUN_TESTS ?= diag,p2p,stress
+VALIDATE_NPUS ?=
 HF_CACHE_DIR ?= $(HOME)/.cache/huggingface
 
 SHELL_SCRIPTS := \
@@ -34,6 +35,7 @@ run:
 	    -v $(HF_CACHE_DIR):/root/.cache/huggingface \
 	    -e HF_TOKEN \
 	    -e RUN_TESTS=$(RUN_TESTS) \
+	    -e VALIDATE_NPUS=$(VALIDATE_NPUS) \
 	    $(IMAGE)
 
 # Run all linters.
