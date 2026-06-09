@@ -1,5 +1,5 @@
-# Image tag tracks the furiosa-llm pin in requirements.txt.
-VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements.txt)
+# Image tag tracks the furiosa-llm pin in requirements-furiosa.txt.
+VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements-furiosa.txt)
 IMAGE := furiosa-rngd-validator:$(VERSION)
 RUN_TESTS ?= diag,p2p,stress
 HF_CACHE_DIR ?= $(HOME)/.cache/huggingface

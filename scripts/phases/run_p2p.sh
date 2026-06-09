@@ -51,6 +51,26 @@ NPU_COUNT=$(detect_npu_count)
   exit 1
 }
 
+declare -a NPUS=()
+if [[ -n "${VALIDATE_NPUS:-}" ]]; then
+  # Normalize: strip all whitespace so values like "0, 2" work.
+  VALIDATE_NPUS=${VALIDATE_NPUS//[[:space:]]/}
+  IFS=',' read -ra NPUS <<<"$VALIDATE_NPUS"
+  for npu in "${NPUS[@]}"; do
+    [[ $npu =~ ^[0-9]+$ ]] || {
+      echo "Error: invalid NPU index '$npu' (VALIDATE_NPUS=$VALIDATE_NPUS)" >&2
+      exit 1
+    }
+    ((npu < NPU_COUNT)) || {
+      echo "Error: NPU index '$npu' out of range (detected $NPU_COUNT NPUs)" >&2
+      exit 1
+    }
+  done
+  echo "Using specified NPUs: ${NPUS[*]}"
+else
+  for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
+fi
+
 save_lspci_info() {
   local label=$1
   echo -e "${BLUE}[$(date +%T)] Saving lspci info for: $label${NC}" | tee -a "$LOG_FILE"
@@ -64,8 +84,8 @@ run_p2p_benchmark() {
 
   echo -e "${CYAN}${BOLD}\n>>> Starting Benchmark: $label <<<\n${NC}" | tee -a "$LOG_FILE"
 
-  for ((i = 0; i < NPU_COUNT; i++)); do
-    for ((j = 0; j < NPU_COUNT; j++)); do
+  for i in "${NPUS[@]}"; do
+    for j in "${NPUS[@]}"; do
       [[ "$i" -eq "$j" ]] && continue
 
       local CURRENT_TIME

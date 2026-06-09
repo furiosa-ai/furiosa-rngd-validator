@@ -64,6 +64,22 @@ make run     # docker run with privileged + debugfs + outputs mounts, forwarding
 
 To run a subset of phases: `RUN_TESTS=diag,stress make run`.
 
+To test only specific NPUs instead of all detected ones, set `VALIDATE_NPUS` as a comma-separated list of indices:
+
+```bash
+VALIDATE_NPUS=0 make run              # NPU 0 only
+VALIDATE_NPUS=0,2 make run            # NPUs 0 and 2
+```
+
+`VALIDATE_NPUS` is honoured by `p2p` and `stress` phases. Omit it to run on all detected NPUs (default).
+
+To reuse a Hugging Face model cache across runs instead of re-downloading each time, point `HF_CACHE_DIR` at the host path that already holds the weights:
+
+```bash
+HF_CACHE_DIR=/data/hf-cache make run
+```
+
+
 The Makefile encapsulates the full `docker run` invocation (mounts, environment, image tag). Inspect it if you need to deviate.
 
 ### Without Docker
@@ -87,7 +103,7 @@ outputs/run_<TIMESTAMP>/
 ├── diag/             # PF_result.log, diag.yaml, dmesg_*.log, exit_code.txt
 ├── p2p/              # PF_result.log, lspci-*, dmesg_*.log, exit_code.txt
 ├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
-└── logs/stress/      # per-model per-NPU serve.log / fixed.log / sharegpt.log
+└── logs/stress/      # per-model per-NPU serve.log / random.log / sharegpt.log
 ```
 
 `index.html` embeds each phase's PASS/FAIL report inline as a collapsible section (failed phases are expanded by default). `summary.json` carries the same machine-readably, plus host metadata:
@@ -141,12 +157,12 @@ For each model in `STRESS_MODELS`, the phase:
 
 - launches `furiosa-llm serve` on every detected NPU in parallel,
 - polls `/v1/models` until each is ready,
-- runs the fixed-length benchmark across all NPUs concurrently, then
+- runs the random benchmark across all NPUs concurrently, then
 - runs the ShareGPT benchmark across all NPUs concurrently.
 
 A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` for the full duration.
 
-**Pass:** the fixed-length and ShareGPT benchmarks both complete cleanly on every NPU.
+**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU.
 
 ## Configuration
 

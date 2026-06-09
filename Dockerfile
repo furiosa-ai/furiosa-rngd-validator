@@ -7,7 +7,7 @@ ARG TARGETARCH
 # ======================================================================
 # furiosa-smi tracks the newest APT release (deliberately unpinned);
 # furiosa-toolkit-rngd tracks the newest 2026.2.x APT revision;
-# Python package versions live in requirements.txt.
+# Python package versions live in `requirements-furiosa.txt` and `requirements-vllm.txt`.
 # Version values sit next to their consuming layers so a version bump
 # does not invalidate the unrelated layers above.
 
@@ -64,16 +64,23 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ======================================================================
-# Install furiosa-llm into an isolated venv
+# Python package installation — two isolated venvs
 # ======================================================================
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# furiosa_venv: furiosa-llm and its transitive deps (incl. transformers==5.1.0).
+# vllm_venv:    vllm and its deps (requires transformers!=5.1.*); kept separate
+#               so the two incompatible transformers pins never conflict.
+ENV FURIOSA_VENV=/opt/furiosa_venv
+ENV VLLM_VENV=/opt/vllm_venv
+ENV PATH="/opt/furiosa_venv/bin:$PATH"
 
-# ======================================================================
-# Python package installation
-# ======================================================================
-COPY requirements.txt $VALIDATOR_DIR/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-furiosa.txt $VALIDATOR_DIR/requirements-furiosa.txt
+COPY requirements-vllm.txt $VALIDATOR_DIR/requirements-vllm.txt
+
+RUN python3 -m venv "$FURIOSA_VENV" \
+    && "$FURIOSA_VENV/bin/pip" install --no-cache-dir -r requirements-furiosa.txt
+
+RUN python3 -m venv "$VLLM_VENV" \
+    && "$VLLM_VENV/bin/pip" install --no-cache-dir -r requirements-vllm.txt
 
 # ======================================================================
 # Copy application files
