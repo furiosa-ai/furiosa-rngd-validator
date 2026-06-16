@@ -1,4 +1,5 @@
-VERSION ?= 2026.1.0
+# Image tag tracks the furiosa-llm pin in requirements.txt.
+VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements.txt)
 IMAGE := furiosa-rngd-validator:$(VERSION)
 RUN_TESTS ?= diag,p2p,stress
 HF_CACHE_DIR ?= $(HOME)/.cache/huggingface
@@ -12,10 +13,11 @@ SHELL_SCRIPTS := \
 	scripts/phases/run_p2p.sh \
 	scripts/phases/run_stress.sh
 
-# Build the Docker image.
+# Build the Docker image. Set NO_CACHE=1 to bypass the layer cache, e.g.
+# to pick up a new furiosa-smi release without a toolkit version bump.
 .PHONY: build
 build:
-	docker build --progress=plain -t $(IMAGE) .
+	DOCKER_BUILDKIT=1 docker build --progress=plain $(if $(NO_CACHE),--no-cache) -t $(IMAGE) .
 
 # Run the container with privileged + debugfs mounts. HF_TOKEN required when
 # RUN_TESTS includes stress.
