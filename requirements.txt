@@ -9,4 +9,4 @@ pyyaml
 # (both x86_64 and aarch64). Must match the torch version furiosa-llm
 # requires exactly.
 torch==2.10.0+cpu
-torchvision==0.25.0+cpu
+torchvision==0.27.1+df56172
