@@ -41,14 +41,21 @@ As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubun
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
 - From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, install the Python dependencies in a venv using `requirements.txt`:
+- From PyPI, install the Python dependencies into two separate venvs. The Furiosa toolchain and vllm have conflicting dependencies, so they must not share a venv.
 
 ```bash
 cd /path/to/furiosa-rngd-validator
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
+# Furiosa venv (furiosa-llm serve)
+python3 -m venv furiosa_venv
+furiosa_venv/bin/pip install -r requirements-furiosa.txt
+
+# vllm venv (benchmark client)
+python3 -m venv vllm_venv
+vllm_venv/bin/pip install -r requirements-vllm.txt
 ```
+
+Point the scripts at these venvs via `FURIOSA_VENV` / `VLLM_VENV` (see `scripts/config.env` for defaults).
 
 ## Running
 
@@ -86,17 +93,17 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 
 ```bash
 cd /path/to/furiosa-rngd-validator
-source venv/bin/activate
+source furiosa_venv/bin/activate
 export HF_TOKEN=your_huggingface_token
 bash entrypoint.sh                            # all phases
 RUN_TESTS=stress bash entrypoint.sh           # subset
 VALIDATE_NPUS=0 bash entrypoint.sh            # NPU 0 only
 ```
 
-If `furiosa-llm` lives in a virtualenv other than `<repo-root>/venv`, set `FURIOSA_VENV` before running:
+The defaults are `$(pwd)/furiosa_venv` and `$(pwd)/vllm_venv` (resolved from the directory you run in). If the venvs live elsewhere, set `FURIOSA_VENV` / `VLLM_VENV` before running:
 
 ```bash
-FURIOSA_VENV=/opt/furiosa/venv bash entrypoint.sh
+FURIOSA_VENV=/furiosa/venv VLLM_VENV=/vllm/venv bash entrypoint.sh
 ```
 
 ## Outputs

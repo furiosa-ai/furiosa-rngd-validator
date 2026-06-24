@@ -71,7 +71,7 @@ RUN apt-get update \
 #               so the two incompatible transformers pins never conflict.
 ENV FURIOSA_VENV=/opt/furiosa_venv
 ENV VLLM_VENV=/opt/vllm_venv
-ENV PATH="/opt/furiosa_venv/bin:$PATH"
+ENV PATH="$FURIOSA_VENV/bin:$PATH"
 
 COPY requirements-furiosa.txt $VALIDATOR_DIR/requirements-furiosa.txt
 COPY requirements-vllm.txt $VALIDATOR_DIR/requirements-vllm.txt

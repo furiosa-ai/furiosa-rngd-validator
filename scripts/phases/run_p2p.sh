@@ -45,31 +45,7 @@ EOF
   echo "</table></div>" >>"$HTML_FILE"
 }
 
-NPU_COUNT=$(detect_npu_count)
-[[ "$NPU_COUNT" -eq 0 ]] && {
-  echo -e "${RED}Error: No NPUs found${NC}"
-  exit 1
-}
-
-declare -a NPUS=()
-if [[ -n "${VALIDATE_NPUS:-}" ]]; then
-  # Normalize: strip all whitespace so values like "0, 2" work.
-  VALIDATE_NPUS=${VALIDATE_NPUS//[[:space:]]/}
-  IFS=',' read -ra NPUS <<<"$VALIDATE_NPUS"
-  for npu in "${NPUS[@]}"; do
-    [[ $npu =~ ^[0-9]+$ ]] || {
-      echo "Error: invalid NPU index '$npu' (VALIDATE_NPUS=$VALIDATE_NPUS)" >&2
-      exit 1
-    }
-    ((npu < NPU_COUNT)) || {
-      echo "Error: NPU index '$npu' out of range (detected $NPU_COUNT NPUs)" >&2
-      exit 1
-    }
-  done
-  echo "Using specified NPUs: ${NPUS[*]}"
-else
-  for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
-fi
+resolve_npus
 
 save_lspci_info() {
   local label=$1

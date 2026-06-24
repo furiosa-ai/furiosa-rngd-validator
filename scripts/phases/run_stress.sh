@@ -31,38 +31,22 @@ elif ! command -v furiosa-llm &>/dev/null; then
   exit 1
 fi
 
+if [[ ! -x "${VLLM_VENV}/bin/python3" ]]; then
+  echo "Error: vllm venv not found. Set VLLM_VENV to the vllm virtualenv path." >&2
+  exit 1
+fi
+if ! "${VLLM_VENV}/bin/python3" -c 'import vllm' &>/dev/null; then
+  echo "Error: vllm not installed in ${VLLM_VENV}." >&2
+  exit 1
+fi
+
 if [[ ! -f "ShareGPT_V3_unfiltered_cleaned_split.json" ]]; then
   wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 fi
 
 declare -a SUMMARY_DATA=()
 
-NPU_COUNT=$(detect_npu_count)
-[[ "$NPU_COUNT" -eq 0 ]] && {
-  echo "Error: No NPUs detected"
-  exit 1
-}
-echo "Detected $NPU_COUNT NPU(s)"
-
-declare -a NPUS=()
-if [[ -n "${VALIDATE_NPUS:-}" ]]; then
-  # Normalize: strip all whitespace so values like "0, 2" work.
-  VALIDATE_NPUS=${VALIDATE_NPUS//[[:space:]]/}
-  IFS=',' read -ra NPUS <<<"$VALIDATE_NPUS"
-  for npu in "${NPUS[@]}"; do
-    [[ $npu =~ ^[0-9]+$ ]] || {
-      echo "Error: invalid NPU index '$npu' (VALIDATE_NPUS=$VALIDATE_NPUS)" >&2
-      exit 1
-    }
-    ((npu < NPU_COUNT)) || {
-      echo "Error: NPU index '$npu' out of range (detected $NPU_COUNT NPUs)" >&2
-      exit 1
-    }
-  done
-  echo "Using specified NPUs: ${NPUS[*]}"
-else
-  for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
-fi
+resolve_npus
 
 IFS=',' read -ra MODELS <<<"$STRESS_MODELS"
 

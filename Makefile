@@ -35,7 +35,7 @@ run:
 	    -v $(HF_CACHE_DIR):/root/.cache/huggingface \
 	    -e HF_TOKEN \
 	    -e RUN_TESTS=$(RUN_TESTS) \
-	    -e VALIDATE_NPUS=$(VALIDATE_NPUS) \
+	    -e VALIDATE_NPUS="$(VALIDATE_NPUS)" \
 	    $(IMAGE)
 
 # Run all linters.
