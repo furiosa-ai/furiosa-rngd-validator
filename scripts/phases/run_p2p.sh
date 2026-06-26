@@ -47,6 +47,16 @@ EOF
 
 resolve_npus
 
+# P2P benchmarks every NPU *pair*, so a single NPU has no pair to test. Skip
+# cleanly instead of running an empty benchmark loop (which would also leave
+# SUMMARY_DATA empty for the report).
+if [[ ${#NPUS[@]} -lt 2 ]]; then
+  echo -e "${YELLOW}[p2p] Skipping: P2P benchmark requires >= 2 NPUs, but ${#NPUS[@]} selected (${NPUS[*]}).${NC}" | tee -a "$LOG_FILE"
+  # Exit 75 (EX_TEMPFAIL) signals SKIP to the report generator -- distinct from
+  # 0 (PASS) so an unrunnable phase isn't reported as a passing one.
+  exit 75
+fi
+
 save_lspci_info() {
   local label=$1
   echo -e "${BLUE}[$(date +%T)] Saving lspci info for: $label${NC}" | tee -a "$LOG_FILE"
@@ -56,7 +66,7 @@ save_lspci_info() {
 
 run_p2p_benchmark() {
   local label=$1
-  declare -a SUMMARY_DATA
+  declare -a SUMMARY_DATA=()
 
   echo -e "${CYAN}${BOLD}\n>>> Starting Benchmark: $label <<<\n${NC}" | tee -a "$LOG_FILE"
 
