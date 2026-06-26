@@ -93,18 +93,16 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 
 ```bash
 cd /path/to/furiosa-rngd-validator
-source furiosa_venv/bin/activate
+source furiosa_venv/bin/activate                       # furiosa-llm + python3 for the diag/p2p/report steps
+export FURIOSA_VENV="$PWD/furiosa_venv" VLLM_VENV="$PWD/vllm_venv"
 export HF_TOKEN=your_huggingface_token
+
 bash entrypoint.sh                            # all phases
 RUN_TESTS=stress bash entrypoint.sh           # subset
 VALIDATE_NPUS=0 bash entrypoint.sh            # NPU 0 only
 ```
 
-The defaults are `$(pwd)/furiosa_venv` and `$(pwd)/vllm_venv` (resolved from the directory you run in). If the venvs live elsewhere, set `FURIOSA_VENV` / `VLLM_VENV` before running:
-
-```bash
-FURIOSA_VENV=/furiosa/venv VLLM_VENV=/vllm/venv bash entrypoint.sh
-```
+`scripts/config.env` defaults `FURIOSA_VENV` and `VLLM_VENV` to the in-container paths (`/opt/furiosa_venv` and `/opt/vllm_venv`), so a local install must point them at the venvs created above -- hence the export line. If your venvs live elsewhere, set those two variables to their absolute paths instead.
 
 ## Outputs
 

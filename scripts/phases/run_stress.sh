@@ -26,17 +26,14 @@ export PATH="$HOME/.local/bin:$PATH"
 if [[ -f "${FURIOSA_VENV}/bin/activate" ]]; then
   # shellcheck source=/dev/null
   source "${FURIOSA_VENV}/bin/activate"
-elif ! command -v furiosa-llm &>/dev/null; then
+fi
+if ! command -v furiosa-llm &>/dev/null; then
   echo "Error: furiosa-llm not found. Set FURIOSA_VENV to the virtualenv path." >&2
   exit 1
 fi
 
-if [[ ! -x "${VLLM_VENV}/bin/python3" ]]; then
-  echo "Error: vllm venv not found. Set VLLM_VENV to the vllm virtualenv path." >&2
-  exit 1
-fi
-if ! "${VLLM_VENV}/bin/python3" -c 'import vllm' &>/dev/null; then
-  echo "Error: vllm not installed in ${VLLM_VENV}." >&2
+if [[ ! -x "${VLLM_VENV}/bin/vllm" ]]; then
+  echo "Error: vllm not found in ${VLLM_VENV}. Set VLLM_VENV to the vllm virtualenv path." >&2
   exit 1
 fi
 
@@ -124,7 +121,7 @@ run_random_benchmark() {
     IFS=':' read -r in_len out_len conc <<<"$triple"
     echo "Random benchmark: in=$in_len out=$out_len conc=$conc"
 
-    "${VLLM_VENV}/bin/python3" -m vllm.entrypoints.cli.main bench serve \
+    "${VLLM_VENV}/bin/vllm" bench serve \
       --backend vllm \
       --model "$PRETRAINED_ID" \
       --port "$port" \
@@ -156,7 +153,7 @@ run_sharegpt_benchmark() {
     return 1
   }
 
-  "${VLLM_VENV}/bin/python3" -m vllm.entrypoints.cli.main bench serve \
+  "${VLLM_VENV}/bin/vllm" bench serve \
     --backend vllm \
     --model "$PRETRAINED_ID" \
     --port "$port" \

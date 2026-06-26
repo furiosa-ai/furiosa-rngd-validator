@@ -74,11 +74,9 @@ ENV VLLM_VENV=/opt/vllm_venv
 ENV PATH="$FURIOSA_VENV/bin:$PATH"
 
 COPY requirements-furiosa.txt $VALIDATOR_DIR/requirements-furiosa.txt
-COPY requirements-vllm.txt $VALIDATOR_DIR/requirements-vllm.txt
-
 RUN python3 -m venv "$FURIOSA_VENV" \
     && "$FURIOSA_VENV/bin/pip" install --no-cache-dir -r requirements-furiosa.txt
-
+COPY requirements-vllm.txt $VALIDATOR_DIR/requirements-vllm.txt
 RUN python3 -m venv "$VLLM_VENV" \
     && "$VLLM_VENV/bin/pip" install --no-cache-dir -r requirements-vllm.txt
 
