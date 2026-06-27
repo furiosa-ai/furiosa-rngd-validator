@@ -61,7 +61,7 @@ jobs:
       # dockerfmt is a Dockerfile formatter.
       - name: Install dockerfmt
         env:
-          DOCKERFMT_VERSION: v0.5.2
+          DOCKERFMT_VERSION: v0.5.4
         # yamllint disable rule:line-length
         run: |
           # --fail makes curl exit non-zero on 4xx, so a bad URL
