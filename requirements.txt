@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-furiosa-llm==2026.2.1
+furiosa-llm==2026.3.0
 # vllm benchmark scripts import PIL via `benchmark_dataset.py`.
 pillow
 # `rngd_diag_decoder` parses the diag.yaml output from rngd-diag.
