@@ -211,14 +211,14 @@ def main():
             fragment = run_dir / entry["report"]
             fragment.unlink(missing_ok=True)
 
-    overall = "pass"
-    for entry in phases:
-        st = status_label(entry["exit_code"])
-        if st == "fail":
-            overall = "fail"
-            break
-        if st == "unknown" and overall == "pass":
-            overall = "unknown"
+    # Roll phase statuses up to a single result, worst-wins. A skipped phase
+    # never ran, so it must not be summarized as "pass".
+    severity = {"pass": 0, "skip": 1, "unknown": 2, "fail": 3}
+    overall = max(
+        (status_label(entry["exit_code"]) for entry in phases),
+        key=lambda st: severity[st],
+        default="pass",
+    )
 
     summary = {
         "hostname": hostname,
