@@ -7,8 +7,7 @@ echo "=============================================="
 
 export HOME=${HOME:-/root}
 export HF_TOKEN=$HF_TOKEN
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export VALIDATOR_DIR=${VALIDATOR_DIR:-$SCRIPT_DIR}
+export VALIDATOR_DIR="${VALIDATOR_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 export OUTPUT_DIR=${OUTPUT_DIR:-$(pwd)/outputs}
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 export TIMESTAMP

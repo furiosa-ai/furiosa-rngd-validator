@@ -23,6 +23,38 @@ detect_npu_count() {
   find /sys/kernel/debug/rngd/ -maxdepth 1 -name 'mgmt*' 2>/dev/null | wc -l
 }
 
+# Detect NPUs and resolve the set to use, honoring VALIDATE_NPUS.
+# Sets globals: NPU_COUNT (total detected) and NPUS (array of indices to use).
+# Exits 1 if no NPUs found or VALIDATE_NPUS is invalid/out of range.
+resolve_npus() {
+  NPU_COUNT=$(detect_npu_count)
+  [[ "$NPU_COUNT" -eq 0 ]] && {
+    echo -e "${RED}Error: No NPUs detected${NC}" >&2
+    exit 1
+  }
+  echo "Detected $NPU_COUNT NPU(s)"
+
+  declare -ga NPUS=()
+  if [[ -n "${VALIDATE_NPUS:-}" ]]; then
+    # Normalize: strip all whitespace so values like "0, 2" work.
+    VALIDATE_NPUS=${VALIDATE_NPUS//[[:space:]]/}
+    IFS=',' read -ra NPUS <<<"$VALIDATE_NPUS"
+    for npu in "${NPUS[@]}"; do
+      [[ $npu =~ ^[0-9]+$ ]] || {
+        echo "Error: invalid NPU index '$npu' (VALIDATE_NPUS=$VALIDATE_NPUS)" >&2
+        exit 1
+      }
+      ((npu < NPU_COUNT)) || {
+        echo "Error: NPU index '$npu' out of range (detected $NPU_COUNT NPUs)" >&2
+        exit 1
+      }
+    done
+    echo "Using specified NPUs: ${NPUS[*]}"
+  else
+    for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
+  fi
+}
+
 # Args: out_dir [timestamp]
 capture_dmesg() {
   local out_dir="$1"

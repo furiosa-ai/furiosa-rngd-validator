@@ -40,15 +40,22 @@ Docker engine on the host. The image carries everything else.
 As root, replicate the `Dockerfile` runtime on a Debian-based distribution (Ubuntu 24.04 verified):
 
 - From the distribution's APT repository: `ca-certificates curl git gnupg jq libpython3.12t64 pciutils python3-venv wget`.
-- From the Furiosa APT repository: `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line.
-- From PyPI, install the Python dependencies in a venv using `requirements.txt`:
+- From the Furiosa APT repository: `furiosa-smi` and `furiosa-toolkit-rngd`. See `Dockerfile` for the exact source line and version pins.
+- From PyPI, install the Python dependencies into two separate venvs. The Furiosa toolchain and vllm have conflicting dependencies, so they must not share a venv.
 
 ```bash
 cd /path/to/furiosa-rngd-validator
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
+# Furiosa venv (furiosa-llm serve)
+python3 -m venv furiosa_venv
+furiosa_venv/bin/pip install -r requirements-furiosa.txt
+
+# vllm venv (benchmark client)
+python3 -m venv vllm_venv
+vllm_venv/bin/pip install -r requirements-vllm.txt
 ```
+
+Point the scripts at these venvs via `FURIOSA_VENV` / `VLLM_VENV` (see `scripts/config.env` for defaults).
 
 ## Running
 
@@ -59,10 +66,26 @@ Pick one of two routes.
 ```bash
 export HF_TOKEN=your_huggingface_token
 make build   # docker build -t furiosa-rngd-validator:<VERSION> .
-make run     # docker run with privileged + debugfs + outputs mounts, forwarding HF_TOKEN and RUN_TESTS
+make run     # docker run --privileged, mounting debugfs + /lib/modules + outputs + HF cache, forwarding HF_TOKEN, RUN_TESTS, VALIDATE_NPUS
 ```
 
 To run a subset of phases: `RUN_TESTS=diag,stress make run`.
+
+To test only specific NPUs instead of all detected ones, set `VALIDATE_NPUS` as a comma-separated list of indices:
+
+```bash
+VALIDATE_NPUS=0 make run              # NPU 0 only
+VALIDATE_NPUS=0,2 make run            # NPUs 0 and 2
+```
+
+`VALIDATE_NPUS` is honoured by `p2p` and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` skip (it needs a pair) and report `SKIP` rather than fail.
+
+`make run` mounts a host Hugging Face cache into the container so weights survive across runs; it defaults to `$HOME/.cache/huggingface`. Point `HF_CACHE_DIR` elsewhere to reuse weights that already live under a different path:
+
+```bash
+HF_CACHE_DIR=/data/hf-cache make run
+```
+
 
 The Makefile encapsulates the full `docker run` invocation (mounts, environment, image tag). Inspect it if you need to deviate.
 
@@ -70,11 +93,16 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 
 ```bash
 cd /path/to/furiosa-rngd-validator
-source venv/bin/activate
+source furiosa_venv/bin/activate                       # furiosa-llm + python3 for the diag/p2p/report steps
+export FURIOSA_VENV="$PWD/furiosa_venv" VLLM_VENV="$PWD/vllm_venv"
 export HF_TOKEN=your_huggingface_token
-bash entrypoint.sh                       # all phases
-RUN_TESTS=stress bash entrypoint.sh      # subset
+
+bash entrypoint.sh                            # all phases
+RUN_TESTS=stress bash entrypoint.sh           # subset
+VALIDATE_NPUS=0 bash entrypoint.sh            # NPU 0 only
 ```
+
+`scripts/config.env` defaults `FURIOSA_VENV` and `VLLM_VENV` to the in-container paths (`/opt/furiosa_venv` and `/opt/vllm_venv`), so a local install must point them at the venvs created above -- hence the export line. If your venvs live elsewhere, set those two variables to their absolute paths instead.
 
 ## Outputs
 
@@ -87,7 +115,7 @@ outputs/run_<TIMESTAMP>/
 ├── diag/             # PF_result.log, diag.yaml, dmesg_*.log, exit_code.txt
 ├── p2p/              # PF_result.log, lspci-*, dmesg_*.log, exit_code.txt
 ├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
-└── logs/stress/      # per-model per-NPU serve.log / fixed.log / sharegpt.log
+└── logs/stress/      # per-model per-NPU serve.log / random.log / sharegpt.log
 ```
 
 `index.html` embeds each phase's PASS/FAIL report inline as a collapsible section (failed phases are expanded by default). `summary.json` carries the same machine-readably, plus host metadata:
@@ -108,7 +136,7 @@ outputs/run_<TIMESTAMP>/
 }
 ```
 
-`overall_status` is `pass` only when every executed phase exited 0, `fail` if any non-zero, and `unknown` if a phase did not record an exit code.
+Each phase's `status` is one of `pass` (exit 0), `skip` (exit 75 — phase could not run, e.g. `p2p` with fewer than 2 NPUs), `fail` (any other non-zero), or `unknown` (no exit code recorded). `overall_status` rolls these up worst-wins with severity `fail` > `unknown` > `skip` > `pass`, so it is `pass` only when every executed phase passed or skipped.
 
 ## Phases
 
@@ -133,7 +161,7 @@ Runs `rngd-diag` to capture per-NPU sensor readings, PCIe link state, AER counte
 
 Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabling ACS on all upstream PCI bridges, once after re-enabling it. On exit the host's original ACS state is restored. The two passes are reported side-by-side so the effect of ACS can be compared. There is no built-in throughput or latency threshold; operators apply their own target spec for the host platform.
 
-**Pass:** `furiosa-hal-bench` completes without error in both passes.
+**Pass:** `furiosa-hal-bench` completes without error in both passes. **Skip:** fewer than 2 NPUs are selected — the phase exits 75 and is reported `SKIP` (no pair to benchmark).
 
 ### `stress` — LLM serving stress
 
@@ -141,12 +169,12 @@ For each model in `STRESS_MODELS`, the phase:
 
 - launches `furiosa-llm serve` on every detected NPU in parallel,
 - polls `/v1/models` until each is ready,
-- runs the fixed-length benchmark across all NPUs concurrently, then
+- runs the random benchmark across all NPUs concurrently, then
 - runs the ShareGPT benchmark across all NPUs concurrently.
 
 A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` for the full duration.
 
-**Pass:** the fixed-length and ShareGPT benchmarks both complete cleanly on every NPU.
+**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU.
 
 ## Configuration
 
@@ -157,10 +185,12 @@ Two layers of knobs tune a run. `RUN_TESTS` and `HF_TOKEN` are set on the comman
 | `RUN_TESTS` | `diag,p2p,stress` | Comma-separated phase list |
 | `HF_TOKEN` | — (required for `stress`) | Hugging Face token for model downloads |
 | `STRESS_MODELS` | `Llama-3.1-8B-Instruct:meta-llama,Qwen2.5-0.5B-Instruct:Qwen` | Stress-phase `name:org` pairs |
+| `STRESS_REVISION` | `v2026.2` | `furiosa-llm` model artifact revision |
+| `STRESS_RANDOM_TRIPLES` | `1024:1024:128,…,31744:1024:1` | Random-benchmark `in_len:out_len:concurrency` triples |
 | `SERVE_READY_MAX_ATTEMPTS` | `30` | `furiosa-llm serve` readiness probe attempts |
 | `SERVE_READY_INTERVAL` | `60` | Seconds between readiness probes |
 
-P2P buffer size, stress base port, and sensor poll interval also live in `scripts/config.env`.
+P2P buffer size (`P2P_BUFFER_SIZE`), stress base port (`STRESS_BASE_PORT`), and sensor poll interval (`SENSOR_POLL_INTERVAL`) also live in `scripts/config.env`.
 
 ## Troubleshooting
 

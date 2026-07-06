@@ -9,6 +9,10 @@ import socket
 
 PHASES = ["diag", "p2p", "stress"]
 
+# Exit code a phase uses to report itself as skipped (e.g. P2P with < 2 NPUs).
+# Distinct from 0 (pass) and other non-zero codes (fail). Matches EX_TEMPFAIL.
+SKIP_EXIT_CODE = 75
+
 
 def read_dmi(path):
     """Read a one-line DMI string from sysfs, returning "Unknown" on failure."""
@@ -34,9 +38,11 @@ def read_exit_code(phase_dir):
 
 
 def status_label(exit_code):
-    """Map an exit code to its status label ("pass", "fail", or "unknown")."""
+    """Map an exit code to its status label ("pass", "fail", "skip", or "unknown")."""
     if exit_code is None:
         return "unknown"
+    if exit_code == SKIP_EXIT_CODE:
+        return "skip"
     return "pass" if exit_code == 0 else "fail"
 
 
@@ -102,6 +108,7 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         " justify-content: space-between; align-items: center; }",
         "        .pass { color: #27ae60; font-weight: bold; }",
         "        .fail { color: #e74c3c; font-weight: bold; }",
+        "        .skip { color: #f39c12; font-weight: bold; }",
         "        .unknown { color: #7f8c8d; font-weight: bold; }",
         "        .section { padding: 0 0 16px 0; }",
         "        table { width: 100%; border-collapse: collapse;"
@@ -204,14 +211,14 @@ def main():
             fragment = run_dir / entry["report"]
             fragment.unlink(missing_ok=True)
 
-    overall = "pass"
-    for entry in phases:
-        st = status_label(entry["exit_code"])
-        if st == "fail":
-            overall = "fail"
-            break
-        if st == "unknown" and overall == "pass":
-            overall = "unknown"
+    # Roll phase statuses up to a single result, worst-wins. A skipped phase
+    # never ran, so it must not be summarized as "pass".
+    severity = {"pass": 0, "skip": 1, "unknown": 2, "fail": 3}
+    overall = max(
+        (status_label(entry["exit_code"]) for entry in phases),
+        key=lambda st: severity[st],
+        default="pass",
+    )
 
     summary = {
         "hostname": hostname,

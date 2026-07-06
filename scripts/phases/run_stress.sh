@@ -2,7 +2,7 @@
 # LLM serving stress phase.
 # For each model in $STRESS_MODELS, launches `furiosa-llm serve` on every
 # detected NPU in parallel, waits for /v1/models readiness, runs the
-# fixed-length and ShareGPT benchmarks concurrently across NPUs, then
+# random and ShareGPT benchmarks concurrently across NPUs, then
 # tears down the serve processes. A background sensor sampler writes
 # SoC/HBM/power readings to sensor_log_<TS>.csv for the full duration.
 
@@ -23,21 +23,27 @@ mkdir -p "$OUTPUT_STRESS" "$LOG_STRESS"
 
 export PATH="$HOME/.local/bin:$PATH"
 
-if [[ ! -d "vllm" ]]; then
-  git clone https://github.com/furiosa-ai/vllm.git -b add_power_monitor
+if [[ -f "${FURIOSA_VENV}/bin/activate" ]]; then
+  # shellcheck source=/dev/null
+  source "${FURIOSA_VENV}/bin/activate"
 fi
+if ! command -v furiosa-llm &>/dev/null; then
+  echo "Error: furiosa-llm not found. Set FURIOSA_VENV to the virtualenv path." >&2
+  exit 1
+fi
+
+if [[ ! -x "${VLLM_VENV}/bin/vllm" ]]; then
+  echo "Error: vllm not found in ${VLLM_VENV}. Set VLLM_VENV to the vllm virtualenv path." >&2
+  exit 1
+fi
+
 if [[ ! -f "ShareGPT_V3_unfiltered_cleaned_split.json" ]]; then
   wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 fi
 
 declare -a SUMMARY_DATA=()
 
-NPU_COUNT=$(detect_npu_count)
-[[ "$NPU_COUNT" -eq 0 ]] && {
-  echo "Error: No NPUs detected"
-  exit 1
-}
-echo "Detected $NPU_COUNT NPU(s)"
+resolve_npus
 
 IFS=',' read -ra MODELS <<<"$STRESS_MODELS"
 
@@ -96,7 +102,7 @@ stop_serving() {
   sleep 2
 }
 
-run_fixed_benchmark() {
+run_random_benchmark() {
   local port=$1
   local model_results_dir=$2
 
@@ -109,17 +115,17 @@ run_fixed_benchmark() {
   }
 
   local triples
-  IFS=',' read -ra triples <<<"$STRESS_FIXED_TRIPLES"
+  IFS=',' read -ra triples <<<"$STRESS_RANDOM_TRIPLES"
 
   for triple in "${triples[@]}"; do
     IFS=':' read -r in_len out_len conc <<<"$triple"
-    echo "Fixed benchmark: in=$in_len out=$out_len conc=$conc"
+    echo "Random benchmark: in=$in_len out=$out_len conc=$conc"
 
-    python3 vllm/benchmarks/benchmark_serving.py \
+    "${VLLM_VENV}/bin/vllm" bench serve \
       --backend vllm \
       --model "$PRETRAINED_ID" \
       --port "$port" \
-      --dataset-name fixed \
+      --dataset-name random \
       --random-input-len "$in_len" \
       --random-output-len "$out_len" \
       --max-concurrency "$conc" \
@@ -127,7 +133,11 @@ run_fixed_benchmark() {
       --result-dir "$model_results_dir" \
       --percentile-metrics "ttft,tpot,itl,e2el" \
       --metric-percentiles "25,50,75,90,95,99" \
-      --save-result
+      --save-result || {
+      rc=$?
+      echo "vllm bench (random) failed (exit $rc) for in=$in_len out=$out_len conc=$conc" >&2
+      return $rc
+    }
   done
 }
 
@@ -143,7 +153,7 @@ run_sharegpt_benchmark() {
     return 1
   }
 
-  python3 vllm/benchmarks/benchmark_serving.py \
+  "${VLLM_VENV}/bin/vllm" bench serve \
     --backend vllm \
     --model "$PRETRAINED_ID" \
     --port "$port" \
@@ -155,7 +165,11 @@ run_sharegpt_benchmark() {
     --result-dir "$model_results_dir" \
     --percentile-metrics "ttft,tpot,itl,e2el" \
     --metric-percentiles "25,50,75,90,95,99" \
-    --save-result
+    --save-result || {
+    rc=$?
+    echo "vllm bench (sharegpt) failed (exit $rc)" >&2
+    return $rc
+  }
 }
 
 MONITOR_PID=""
@@ -204,7 +218,7 @@ for model_entry in "${MODELS[@]}"; do
   serve_pids=()
   serve_ports=()
 
-  for ((npu = 0; npu < NPU_COUNT; npu++)); do
+  for npu in "${NPUS[@]}"; do
     port=$((STRESS_BASE_PORT + npu))
     mkdir -p "$LOG_STRESS/${model}/npu${npu}"
     echo "Starting $model on NPU $npu (port $port)"
@@ -218,8 +232,8 @@ for model_entry in "${MODELS[@]}"; do
       --served-model-name "$served_model_name" \
       >"$LOG_STRESS/${model}/npu${npu}/serve.log" 2>&1 &
 
-    serve_pids+=("$!")
-    serve_ports+=("$port")
+    serve_pids[npu]=$!
+    serve_ports[npu]=$port
   done
 
   sleep 5
@@ -227,40 +241,48 @@ for model_entry in "${MODELS[@]}"; do
   if ! check_models_up "${serve_ports[@]}"; then
     echo "Model startup failed"
     stop_serving "${serve_pids[@]}"
-    for ((npu = 0; npu < NPU_COUNT; npu++)); do
-      SUMMARY_DATA+=("$model|NPU $npu|Fixed+ShareGPT|FAIL")
+    for npu in "${NPUS[@]}"; do
+      SUMMARY_DATA+=("$model|NPU $npu|Random+ShareGPT|FAIL")
     done
     continue
   fi
 
-  declare -a fixed_pids=()
-  for ((i = 0; i < NPU_COUNT; i++)); do
-    result_dir="$OUTPUT_STRESS/${model}/npu${i}"
+  declare -a random_pids=()
+  for npu in "${NPUS[@]}"; do
+    result_dir="$OUTPUT_STRESS/${model}/npu${npu}"
     mkdir -p "$result_dir"
-    run_fixed_benchmark "${serve_ports[$i]}" "$result_dir" >"$LOG_STRESS/${model}/npu${i}/fixed.log" 2>&1 &
-    fixed_pids+=($!)
+    run_random_benchmark "${serve_ports[npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/random.log" 2>&1 &
+    random_pids[npu]=$!
   done
 
-  declare -a fixed_results=()
-  for idx in "${!fixed_pids[@]}"; do
-    wait "${fixed_pids[idx]}" && fixed_results[idx]=0 || fixed_results[idx]=1
+  declare -a random_results=()
+  for npu in "${NPUS[@]}"; do
+    rc=0
+    wait "${random_pids[npu]}" || rc=$?
+    random_results[npu]=$rc
+    if [[ $rc -ne 0 ]]; then
+      echo "NPU $npu random benchmark FAILED (exit $rc)" | tee -a "$LOG_STRESS/${model}/npu${npu}/random.log"
+    fi
   done
 
   declare -a sharegpt_pids=()
-  for ((i = 0; i < NPU_COUNT; i++)); do
-    result_dir="$OUTPUT_STRESS/${model}/npu${i}"
+  for npu in "${NPUS[@]}"; do
+    result_dir="$OUTPUT_STRESS/${model}/npu${npu}"
     mkdir -p "$result_dir"
-    run_sharegpt_benchmark "${serve_ports[$i]}" "$result_dir" >"$LOG_STRESS/${model}/npu${i}/sharegpt.log" 2>&1 &
-    sharegpt_pids+=($!)
+    run_sharegpt_benchmark "${serve_ports[npu]}" "$result_dir" >"$LOG_STRESS/${model}/npu${npu}/sharegpt.log" 2>&1 &
+    sharegpt_pids[npu]=$!
   done
 
-  for idx in "${!sharegpt_pids[@]}"; do
+  for npu in "${NPUS[@]}"; do
     sharegpt_result=0
-    wait "${sharegpt_pids[$idx]}" || sharegpt_result=$?
-    if [[ ${fixed_results[$idx]} -eq 0 ]] && [[ $sharegpt_result -eq 0 ]]; then
-      SUMMARY_DATA+=("$model|NPU $idx|Fixed+ShareGPT|PASS")
+    wait "${sharegpt_pids[npu]}" || sharegpt_result=$?
+    if [[ $sharegpt_result -ne 0 ]]; then
+      echo "NPU $npu sharegpt benchmark FAILED (exit $sharegpt_result)" | tee -a "$LOG_STRESS/${model}/npu${npu}/sharegpt.log"
+    fi
+    if [[ ${random_results[npu]} -eq 0 ]] && [[ $sharegpt_result -eq 0 ]]; then
+      SUMMARY_DATA+=("$model|NPU $npu|Random+ShareGPT|PASS")
     else
-      SUMMARY_DATA+=("$model|NPU $idx|Fixed+ShareGPT|FAIL")
+      SUMMARY_DATA+=("$model|NPU $npu|Random+ShareGPT|FAIL")
     fi
   done
 

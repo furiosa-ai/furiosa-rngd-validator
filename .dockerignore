@@ -3,7 +3,6 @@ outputs/
 logs/
 
 # Stress phase fetches these into the cwd (= scripts/) at runtime.
-scripts/vllm/
 scripts/ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Python bytecode and tool caches
@@ -16,6 +15,8 @@ __pycache__/
 # Local Python environments and build artifacts
 .venv/
 venv/
+furiosa_venv/
+vllm_venv/
 env/
 ENV/
 build/

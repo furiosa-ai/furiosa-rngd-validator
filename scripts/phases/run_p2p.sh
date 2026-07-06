@@ -45,11 +45,17 @@ EOF
   echo "</table></div>" >>"$HTML_FILE"
 }
 
-NPU_COUNT=$(detect_npu_count)
-[[ "$NPU_COUNT" -eq 0 ]] && {
-  echo -e "${RED}Error: No NPUs found${NC}"
-  exit 1
-}
+resolve_npus
+
+# P2P benchmarks every NPU *pair*, so a single NPU has no pair to test. Skip
+# cleanly instead of running an empty benchmark loop (which would also leave
+# SUMMARY_DATA empty for the report).
+if [[ ${#NPUS[@]} -lt 2 ]]; then
+  echo -e "${YELLOW}[p2p] Skipping: P2P benchmark requires >= 2 NPUs, but ${#NPUS[@]} selected (${NPUS[*]}).${NC}" | tee -a "$LOG_FILE"
+  # Exit 75 (EX_TEMPFAIL) signals SKIP to the report generator -- distinct from
+  # 0 (PASS) so an unrunnable phase isn't reported as a passing one.
+  exit 75
+fi
 
 save_lspci_info() {
   local label=$1
@@ -60,12 +66,12 @@ save_lspci_info() {
 
 run_p2p_benchmark() {
   local label=$1
-  declare -a SUMMARY_DATA
+  declare -a SUMMARY_DATA=()
 
   echo -e "${CYAN}${BOLD}\n>>> Starting Benchmark: $label <<<\n${NC}" | tee -a "$LOG_FILE"
 
-  for ((i = 0; i < NPU_COUNT; i++)); do
-    for ((j = 0; j < NPU_COUNT; j++)); do
+  for i in "${NPUS[@]}"; do
+    for j in "${NPUS[@]}"; do
       [[ "$i" -eq "$j" ]] && continue
 
       local CURRENT_TIME
