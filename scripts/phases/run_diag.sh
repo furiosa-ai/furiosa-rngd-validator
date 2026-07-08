@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPTS_ROOT/lib/common.sh"
+# shellcheck source=../config.env
+source "$SCRIPTS_ROOT/config.env"
 
 OUTPUT_DIAG=${OUTPUT_DIAG:-$RUN_DIR/diag}
 mkdir -p "$OUTPUT_DIAG"
@@ -52,8 +54,15 @@ echo "Hardware Vendor: $VENDOR"
 echo "Hardware Model:  $MODEL"
 echo "------------------------------------------"
 
+DIAG_NPU_ARGS=()
+if [[ -n "${VALIDATE_NPUS:-}" ]]; then
+  # Already normalized/validated at config load by normalize_validate_npus.
+  DIAG_NPU_ARGS=(--npu "$VALIDATE_NPUS")
+  echo "Using specified NPUs: $VALIDATE_NPUS"
+fi
+
 echo "[1/2] Running $(basename "$DIAG_BIN") ($ARCH)..."
-"$DIAG_BIN" -o "$YAML_NAME"
+"$DIAG_BIN" "${DIAG_NPU_ARGS[@]}" -o "$YAML_NAME"
 
 echo "[2/2] Decoding result..."
 PYTHONPATH="$TOOLS_DIR" python3 -m rngd_diag_decoder --yaml-file "$YAML_NAME" --output-dir "$OUTPUT_DIAG"
