@@ -78,7 +78,7 @@ VALIDATE_NPUS=0 make run              # NPU 0 only
 VALIDATE_NPUS=0,2 make run            # NPUs 0 and 2
 ```
 
-`VALIDATE_NPUS` is honoured by `p2p` and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` skip (it needs a pair) and report `SKIP` rather than fail.
+`VALIDATE_NPUS` is honoured by the `diag`, `p2p`, and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` skip (it needs a pair) and report `SKIP` rather than fail.
 
 `make run` mounts a host Hugging Face cache into the container so weights survive across runs; it defaults to `$HOME/.cache/huggingface`. Point `HF_CACHE_DIR` elsewhere to reuse weights that already live under a different path:
 

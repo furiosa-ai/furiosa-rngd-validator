@@ -23,6 +23,43 @@ detect_npu_count() {
   find /sys/kernel/debug/rngd/ -maxdepth 1 -name 'mgmt*' 2>/dev/null | wc -l
 }
 
+# Normalize and validate the VALIDATE_NPUS override, if set.
+# Strips whitespace (so "0, 2" works), rejects empty/non-numeric values, and
+# rejects any index that is not among the NPUs actually present on this host so a
+# misconfigured override fails fast with a clear message instead of surfacing as
+# a confusing failure deep inside a vendor binary. Rewrites VALIDATE_NPUS in
+# place with the normalized value. Idempotent, so callers may invoke it more than
+# once. Optional arg 1 is the detected NPU count; when omitted it is detected here
+# so the check works even for callers (e.g. config load) that have no count yet.
+# Exits 1 if VALIDATE_NPUS is set but malformed or out of the detected range.
+normalize_validate_npus() {
+  [[ -n "${VALIDATE_NPUS:-}" ]] || return 0
+  local normalized entry
+  local -a entries
+  local count="${1:-$(detect_npu_count)}"
+  ((count > 0)) || {
+    log_error "No NPUs detected, cannot honor VALIDATE_NPUS='$VALIDATE_NPUS'"
+    exit 1
+  }
+  normalized=${VALIDATE_NPUS//[[:space:]]/}
+  [[ -n "$normalized" ]] || {
+    log_error "VALIDATE_NPUS contains no NPU indices (VALIDATE_NPUS='$VALIDATE_NPUS')"
+    exit 1
+  }
+  IFS=',' read -ra entries <<<"$normalized"
+  for entry in "${entries[@]}"; do
+    [[ $entry =~ ^[0-9]+$ ]] || {
+      log_error "invalid NPU index '$entry' (VALIDATE_NPUS='$VALIDATE_NPUS')"
+      exit 1
+    }
+    ((10#$entry < count)) || {
+      log_error "NPU index '$entry' out of range (detected $count NPUs, available range 0~$((count - 1)))"
+      exit 1
+    }
+  done
+  VALIDATE_NPUS=$normalized
+}
+
 # Detect NPUs and resolve the set to use, honoring VALIDATE_NPUS.
 # Sets globals: NPU_COUNT (total detected) and NPUS (array of indices to use).
 # Exits 1 if no NPUs found or VALIDATE_NPUS is invalid/out of range.
@@ -34,21 +71,13 @@ resolve_npus() {
   }
   echo "Detected $NPU_COUNT NPU(s)"
 
+  # Validate/normalize against the count we just detected (idempotent even if
+  # already run at config load).
+  normalize_validate_npus "$NPU_COUNT"
+
   declare -ga NPUS=()
   if [[ -n "${VALIDATE_NPUS:-}" ]]; then
-    # Normalize: strip all whitespace so values like "0, 2" work.
-    VALIDATE_NPUS=${VALIDATE_NPUS//[[:space:]]/}
     IFS=',' read -ra NPUS <<<"$VALIDATE_NPUS"
-    for npu in "${NPUS[@]}"; do
-      [[ $npu =~ ^[0-9]+$ ]] || {
-        echo "Error: invalid NPU index '$npu' (VALIDATE_NPUS=$VALIDATE_NPUS)" >&2
-        exit 1
-      }
-      ((npu < NPU_COUNT)) || {
-        echo "Error: NPU index '$npu' out of range (detected $NPU_COUNT NPUs)" >&2
-        exit 1
-      }
-    done
     echo "Using specified NPUs: ${NPUS[*]}"
   else
     for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
