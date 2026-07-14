@@ -19,7 +19,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 HEALTHCHECK NONE
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV RUN_TESTS=diag,p2p,stress
+ENV RUN_TESTS=diag,p2p,allgather,stress,serve
 
 ENV HOME=/root
 ENV VALIDATOR_DIR=$HOME/furiosa-rngd-validator
@@ -69,16 +69,18 @@ RUN apt-get update \
 # furiosa_venv: furiosa-llm and its transitive deps (incl. transformers==5.1.0).
 # vllm_venv:    vllm and its deps (requires transformers!=5.1.*); kept separate
 #               so the two incompatible transformers pins never conflict.
-ENV FURIOSA_VENV=/opt/furiosa_venv
+
 ENV VLLM_VENV=/opt/vllm_venv
+ENV FURIOSA_VENV=/opt/furiosa_venv
 ENV PATH="$FURIOSA_VENV/bin:$PATH"
 
-COPY requirements-furiosa.txt $VALIDATOR_DIR/requirements-furiosa.txt
-RUN python3 -m venv "$FURIOSA_VENV" \
-    && "$FURIOSA_VENV/bin/pip" install --no-cache-dir -r requirements-furiosa.txt
 COPY requirements-vllm.txt $VALIDATOR_DIR/requirements-vllm.txt
 RUN python3 -m venv "$VLLM_VENV" \
     && "$VLLM_VENV/bin/pip" install --no-cache-dir -r requirements-vllm.txt
+COPY requirements-furiosa.txt $VALIDATOR_DIR/requirements-furiosa.txt
+RUN python3 -m venv "$FURIOSA_VENV" \
+    && "$FURIOSA_VENV/bin/pip" install --no-cache-dir -r requirements-furiosa.txt
+
 
 # ======================================================================
 # Copy application files

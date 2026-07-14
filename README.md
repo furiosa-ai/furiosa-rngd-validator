@@ -1,6 +1,6 @@
 # Furiosa RNGD Validator
 
-Validates a Furiosa RNGD-based server before production deployment. Three independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `stress` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans (phase reports embedded inline as collapsible sections), `summary.json` for tooling.
+Validates a Furiosa RNGD-based server before production deployment. Five independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `allgather` (multi-NPU allgather bandwidth), `stress` (hardware stress test), `serve` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans (phase reports embedded inline as collapsible sections), `summary.json` for tooling.
 
 **Sections:**
 
@@ -14,7 +14,6 @@ Validates a Furiosa RNGD-based server before production deployment. Three indepe
 Requires [Docker](https://docs.docker.com/engine/install/) on the host. Run as root.
 
 ```bash
-export HF_TOKEN=your_huggingface_token
 make build && make run
 ```
 
@@ -27,9 +26,7 @@ make build && make run
 - Host architecture: `x86_64` or `aarch64`.
 - Furiosa RNGD driver loaded with `debugfs` mounted at `/sys/kernel/debug` (verify with `ls /sys/kernel/debug/rngd/mgmt*`).
 - Root user — the phases read `debugfs`, drive `setpci`, and capture `dmesg`.
-- A [Hugging Face access token](https://huggingface.co/settings/tokens) with terms-of-use accepted for both `stress`-phase models:
-  - [`meta-llama/Llama-3.1-8B-Instruct`](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-  - [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
+- Network access to Hugging Face to download the `serve`-phase models in `SERVE_MODELS` (default: `Qwen2.5-0.5B-Instruct`, `EXAONE-4.0-32B-FP8`). The defaults are public — no access token required.
 
 ### With Docker
 
@@ -64,9 +61,8 @@ Pick one of two routes.
 ### With Docker
 
 ```bash
-export HF_TOKEN=your_huggingface_token
 make build   # docker build -t furiosa-rngd-validator:<VERSION> .
-make run     # docker run --privileged, mounting debugfs + /lib/modules + outputs + HF cache, forwarding HF_TOKEN, RUN_TESTS, VALIDATE_NPUS
+make run     # docker run --privileged, mounting debugfs + /lib/modules + outputs + HF cache, forwarding RUN_TESTS, VALIDATE_NPUS
 ```
 
 To run a subset of phases: `RUN_TESTS=diag,stress make run`.
@@ -78,7 +74,7 @@ VALIDATE_NPUS=0 make run              # NPU 0 only
 VALIDATE_NPUS=0,2 make run            # NPUs 0 and 2
 ```
 
-`VALIDATE_NPUS` is honoured by the `diag`, `p2p`, and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` skip (it needs a pair) and report `SKIP` rather than fail.
+`VALIDATE_NPUS` is honoured by the `diag`, `p2p`, `allgather`, `stress`, and `serve` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` and `allgather` skip (they need a pair) and report `SKIP` rather than fail.
 
 `make run` mounts a host Hugging Face cache into the container so weights survive across runs; it defaults to `$HOME/.cache/huggingface`. Point `HF_CACHE_DIR` elsewhere to reuse weights that already live under a different path:
 
@@ -95,7 +91,6 @@ The Makefile encapsulates the full `docker run` invocation (mounts, environment,
 cd /path/to/furiosa-rngd-validator
 source furiosa_venv/bin/activate                       # furiosa-llm + python3 for the diag/p2p/report steps
 export FURIOSA_VENV="$PWD/furiosa_venv" VLLM_VENV="$PWD/vllm_venv"
-export HF_TOKEN=your_huggingface_token
 
 bash entrypoint.sh                            # all phases
 RUN_TESTS=stress bash entrypoint.sh           # subset
@@ -114,8 +109,11 @@ outputs/run_<TIMESTAMP>/
 ├── summary.json      # machine-readable summary
 ├── diag/             # PF_result.log, diag.yaml, dmesg_*.log, exit_code.txt
 ├── p2p/              # PF_result.log, lspci-*, dmesg_*.log, exit_code.txt
-├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
-└── logs/stress/      # per-model per-NPU serve.log / random.log / sharegpt.log
+├── allgather/        # PF_result.log, dmesg_*.log, exit_code.txt
+├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, exit_code.txt
+├── serve/            # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
+├── logs/stress/      # per-NPU furiosa-stress-test logs (npu<N>.log)
+└── logs/serve/       # per-model per-NPU serve.log / random.log / sharegpt.log
 ```
 
 `index.html` embeds each phase's PASS/FAIL report inline as a collapsible section (failed phases are expanded by default). `summary.json` carries the same machine-readably, plus host metadata:
@@ -129,9 +127,11 @@ outputs/run_<TIMESTAMP>/
   "run_dir": "/root/furiosa-rngd-validator/outputs/run_20260512_140000",
   "overall_status": "pass",
   "phases": [
-    {"phase": "diag",   "exit_code": 0, "status": "pass"},
-    {"phase": "p2p",    "exit_code": 0, "status": "pass"},
-    {"phase": "stress", "exit_code": 0, "status": "pass"}
+    {"phase": "diag",      "exit_code": 0, "status": "pass"},
+    {"phase": "p2p",       "exit_code": 0, "status": "pass"},
+    {"phase": "allgather", "exit_code": 0, "status": "pass"},
+    {"phase": "stress",    "exit_code": 0, "status": "pass"},
+    {"phase": "serve",     "exit_code": 0, "status": "pass"}
   ]
 }
 ```
@@ -140,7 +140,7 @@ Each phase's `status` is one of `pass` (exit 0), `skip` (exit 75 — phase could
 
 ## Phases
 
-Each phase tests a different aspect of the server and applies its own pass criterion. They run in fixed order `diag → p2p → stress`; the subset is selected by `RUN_TESTS` (default `diag,p2p,stress`).
+Each phase tests a different aspect of the server and applies its own pass criterion. They run in fixed order `diag → p2p → allgather → stress → serve`; the subset is selected by `RUN_TESTS` (default `diag,p2p,allgather,stress,serve`).
 
 ### `diag` — hardware diagnostics
 
@@ -163,48 +163,61 @@ Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabl
 
 **Pass:** `furiosa-hal-bench` completes without error in both passes. **Skip:** fewer than 2 NPUs are selected — the phase exits 75 and is reported `SKIP` (no pair to benchmark).
 
-### `stress` — LLM serving stress
+### `allgather` — multi-NPU allgather bandwidth
 
-For each model in `STRESS_MODELS`, the phase:
+Runs `furiosa-hal-bench allgather --npus …` once per NPU group, for each group size in `ALLGATHER_GROUP_SIZES` (default `4`). Groups are formed from the selected NPUs: an exact multiple of the size chunks non-overlapping (e.g. 8 NPUs, size 4 → `[0,1,2,3]`, `[4,5,6,7]`); otherwise a final group is anchored at the last NPU so both the first and last NPU are exercised (e.g. 5 NPUs, size 4 → `[0,1,2,3]`, `[1,2,3,4]`). There is no built-in threshold; operators apply their own target spec.
 
-- launches `furiosa-llm serve` on every detected NPU in parallel,
+**Pass:** `furiosa-hal-bench` completes without error for every group. **Skip:** no group size fits the selected NPU count (e.g. fewer than 2 NPUs) — the phase exits 75 and is reported `SKIP`.
+
+### `stress` — hardware stress test
+
+Runs `furiosa-stress-test $STRESS_SCENARIO -d <npu> -t $STRESS_DURATION` on every selected NPU in parallel (scenario `full` for `STRESS_DURATION` seconds by default). A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` for the full duration.
+
+**Pass:** `furiosa-stress-test` exits cleanly on every NPU.
+
+### `serve` — LLM serving
+
+First the phase pre-fetches every `SERVE_MODELS` entry via `hf download` into the mounted HF cache (cache-aware, so a warm cache is a no-op) — model download no longer counts against the readiness budget. Then, for each model, the phase:
+
+- launches `furiosa-llm serve` on every selected NPU in parallel (TP models serve one instance per NPU group; see `SERVE_MODELS`),
 - polls `/v1/models` until each is ready,
 - runs the random benchmark across all NPUs concurrently, then
 - runs the ShareGPT benchmark across all NPUs concurrently.
 
 A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` for the full duration.
 
-**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU.
+**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU. **Skip:** a model whose tensor-parallel size exceeds the selected NPU count is skipped.
 
 ## Configuration
 
-Two layers of knobs tune a run. `RUN_TESTS` and `HF_TOKEN` are set on the command line; the rest default in `scripts/config.env`. Override any by exporting before invocation, or by passing `-e VAR=value` to Docker.
+Two layers of knobs tune a run. `RUN_TESTS` is set on the command line; the rest default in `scripts/config.env`. Override any by exporting before invocation, or by passing `-e VAR=value` to Docker.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `RUN_TESTS` | `diag,p2p,stress` | Comma-separated phase list |
-| `HF_TOKEN` | — (required for `stress`) | Hugging Face token for model downloads |
-| `STRESS_MODELS` | `Llama-3.1-8B-Instruct:meta-llama,Qwen2.5-0.5B-Instruct:Qwen` | Stress-phase `name:org` pairs |
-| `STRESS_REVISION` | `v2026.2` | `furiosa-llm` model artifact revision |
-| `STRESS_RANDOM_TRIPLES` | `1024:1024:128,…,31744:1024:1` | Random-benchmark `in_len:out_len:concurrency` triples |
-| `SERVE_READY_MAX_ATTEMPTS` | `30` | `furiosa-llm serve` readiness probe attempts |
+| `RUN_TESTS` | `diag,p2p,allgather,stress,serve` | Comma-separated phase list |
+| `STRESS_SCENARIO` | `full` | `furiosa-stress-test` scenario: `computation`, `memory`, or `full` |
+| `STRESS_DURATION` | `60` | `furiosa-stress-test` duration in seconds |
+| `SERVE_MODELS` | `Qwen2.5-0.5B-Instruct:Qwen:1,EXAONE-4.0-32B-FP8:LGAI-EXAONE:4` | Serve-phase `name:org:tp` entries; `tp` is the tensor-parallel size (NPUs per serve, defaults to 1). A model whose `tp` exceeds the selected NPU count is skipped |
+| `SERVE_REVISION` | `v2026.3` | `furiosa-llm` model artifact revision |
+| `SERVE_RANDOM_TRIPLES` | `1024:1024:128,…,31744:1024:1` | Random-benchmark `in_len:out_len:concurrency` triples |
+| `SERVE_READY_MAX_ATTEMPTS` | `10` | `furiosa-llm serve` readiness probe attempts |
 | `SERVE_READY_INTERVAL` | `60` | Seconds between readiness probes |
+| `P2P_ACS_MODE` | — (runs both) | Restrict the `p2p` phase to one ACS sequence: `disable` or `enable`. Empty runs both, disable then enable |
+| `ALLGATHER_GROUP_SIZES` | `4` | Comma-separated NPU group sizes benchmarked by the `allgather` phase; a size larger than the selected NPU count is skipped |
 
-P2P buffer size (`P2P_BUFFER_SIZE`), stress base port (`STRESS_BASE_PORT`), and sensor poll interval (`SENSOR_POLL_INTERVAL`) also live in `scripts/config.env`.
+P2P buffer size (`P2P_BUFFER_SIZE`), allgather buffer size (`ALLGATHER_BUFFER_SIZE`), serve base port (`SERVE_BASE_PORT`), and sensor poll interval (`SENSOR_POLL_INTERVAL`) also live in `scripts/config.env`.
 
 ## Troubleshooting
 
-Five common failure modes.
+Four common failure modes.
 
 **No NPUs detected** — `/sys/kernel/debug/rngd/mgmt<N>` is missing. Confirm the driver is loaded; for Docker, confirm `-v /sys/kernel/debug:/sys/kernel/debug` and `--privileged` are present (`make run` already passes them).
 
-**`HF_TOKEN` is not set** — Export `HF_TOKEN` in the shell before running.
-
-**Stress phase hangs at "Model on port X not ready"** — `furiosa-llm serve` takes minutes on first run (compilation + weight download). The default budget is `SERVE_READY_MAX_ATTEMPTS × SERVE_READY_INTERVAL` = 30 × 60 s = 30 min; tune those env vars for your environment.
+**Serve phase hangs at "Model on port X not ready"** — `furiosa-llm serve` takes minutes on first run to compile the model for the NPU. Weights are pre-fetched before serving (see below), so this wait no longer includes download time. The default budget is `SERVE_READY_MAX_ATTEMPTS × SERVE_READY_INTERVAL` = 10 × 60 s = 10 min; tune those env vars for your environment.
 
 **ACS not restored after a `p2p` abort** — `run_p2p.sh` saves the host's ACS state before disabling it and installs an `EXIT/INT/TERM` trap that restores it on exit, so a normal abort returns ACS to its pre-run state. A `SIGKILL` (e.g. `docker kill`) bypasses the trap and can leave ACS in a non-original state; reboot to re-apply the firmware ACS configuration.
 
-**First stress run downloads `vllm` and `ShareGPT_V3_unfiltered_cleaned_split.json` into `scripts/`.** Non-Docker runs reuse them on subsequent runs. Docker runs use `--rm` and re-download each time; for repeated or air-gapped Docker use, bake the artifacts into the image. For air-gapped non-Docker use, prime the caches on a connected host first and copy them over.
+**First serve run downloads model weights, `vllm`, and `ShareGPT_V3_unfiltered_cleaned_split.json`.** Before serving, the phase pre-fetches each `SERVE_MODELS` entry via `hf download` into the mounted HF cache (`HF_CACHE_DIR`, default `$HOME/.cache/huggingface`); `hf download` is cache-aware, so a warm cache is a no-op. `vllm` and the ShareGPT dataset land in `scripts/`. Non-Docker runs reuse all of these on subsequent runs, and Docker runs reuse the model weights via the mounted cache; but `vllm`/ShareGPT are re-fetched each Docker run (`--rm`), so for repeated or air-gapped Docker use, bake those artifacts into the image.
 
 ---
 

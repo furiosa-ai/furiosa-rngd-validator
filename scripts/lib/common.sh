@@ -2,12 +2,14 @@
 # Common helpers for the phase scripts. Sourced, not executed.
 
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
 NC='\033[0m'
 
-# SC2034 (variable appears unused) -- GREEN, BLUE, and BOLD are consumed only
-# by sourcing scripts; shellcheck cannot follow that direction.
+# SC2034 (variable appears unused) -- these colors are consumed only by sourcing
+# scripts; shellcheck cannot follow that direction.
+# shellcheck disable=SC2034
+YELLOW='\033[1;33m'
+# shellcheck disable=SC2034
+CYAN='\033[0;36m'
 # shellcheck disable=SC2034
 GREEN='\033[0;32m'
 # shellcheck disable=SC2034
@@ -15,8 +17,6 @@ BLUE='\033[0;34m'
 # shellcheck disable=SC2034
 BOLD='\033[1m'
 
-log_info() { echo -e "${CYAN}[INFO]${NC} $*"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 detect_npu_count() {
@@ -82,6 +82,31 @@ resolve_npus() {
   else
     for ((i = 0; i < NPU_COUNT; i++)); do NPUS+=("$i"); done
   fi
+}
+
+# Split the resolved $NPUS into groups of the given size, echoing one
+# space-separated group per line. When the NPU count is an exact multiple of
+# the size the groups are non-overlapping chunks (e.g. 8 NPUs, size 4 ->
+# "0 1 2 3" / "4 5 6 7"); otherwise a final group anchored at the last NPU is
+# appended so both the first and last NPU are covered (e.g. 5 NPUs, size 4 ->
+# "0 1 2 3" / "1 2 3 4"). Groups follow position in $NPUS, so a non-contiguous
+# VALIDATE_NPUS selection is grouped in its sorted order. Caller must ensure
+# size <= ${#NPUS[@]}.
+npu_groups() {
+  local size=$1
+  local n=${#NPUS[@]}
+  local -a starts=()
+  local full=$((n / size)) k
+  for ((k = 0; k < full; k++)); do starts+=($((k * size))); done
+  ((n % size != 0)) && starts+=($((n - size)))
+
+  local s i
+  local -a grp
+  for s in "${starts[@]}"; do
+    grp=()
+    for ((i = s; i < s + size; i++)); do grp+=("${NPUS[i]}"); done
+    echo "${grp[*]}"
+  done
 }
 
 # Args: out_dir [timestamp]

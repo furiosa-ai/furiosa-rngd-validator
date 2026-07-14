@@ -151,27 +151,40 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+case "$P2P_ACS_MODE" in
+  "" | disable | enable) ;;
+  *)
+    echo -e "${YELLOW}[p2p] Invalid P2P_ACS_MODE='$P2P_ACS_MODE'; expected disable|enable (empty runs both).${NC}" | tee -a "$LOG_FILE"
+    exit 1
+    ;;
+esac
+
 save_lspci_info "initial"
 
-echo -e "\n${BOLD}[STEP 1] ACS Disable Sequence${NC}" | tee -a "$LOG_FILE"
+# Save the pre-run ACS state up front so the EXIT trap can always restore it,
+# regardless of which sequences below actually run.
 bash "$SCRIPTS_ROOT/lib/acs.sh" --mode save "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
-bash "$SCRIPTS_ROOT/lib/acs.sh" --mode disable 2>&1 | tee -a "$LOG_FILE"
-save_lspci_info "ACS_Disabled"
-run_p2p_benchmark "after ACS disable"
 
-echo >>"$LOG_FILE"
+if [[ -z "$P2P_ACS_MODE" || "$P2P_ACS_MODE" == disable ]]; then
+  echo -e "\n${BOLD}[STEP 1] ACS Disable Sequence${NC}" | tee -a "$LOG_FILE"
+  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode disable 2>&1 | tee -a "$LOG_FILE"
+  save_lspci_info "ACS_Disabled"
+  run_p2p_benchmark "after ACS disable"
+  echo >>"$LOG_FILE"
+fi
 
-echo -e "\n${BOLD}[STEP 2] ACS Enable Sequence${NC}" | tee -a "$LOG_FILE"
-bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE"
-save_lspci_info "ACS_Enabled"
-run_p2p_benchmark "after ACS enable"
+if [[ -z "$P2P_ACS_MODE" || "$P2P_ACS_MODE" == enable ]]; then
+  echo -e "\n${BOLD}[STEP 2] ACS Enable Sequence${NC}" | tee -a "$LOG_FILE"
+  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE"
+  save_lspci_info "ACS_Enabled"
+  run_p2p_benchmark "after ACS enable"
+fi
 
 cat <<EOF >>"$HTML_FILE"
     <div class="section">
         <p>If you have any questions about the throughput results, please contact Furiosa for support.</p>
     </div>
 EOF
-html_close "$HTML_FILE"
 
 capture_dmesg "$OUTPUT_P2P"
 

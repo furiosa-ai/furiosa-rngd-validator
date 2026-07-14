@@ -7,7 +7,7 @@ import json
 import pathlib
 import socket
 
-PHASES = ["diag", "p2p", "stress"]
+PHASES = ["diag", "p2p", "allgather", "stress", "serve"]
 
 # Exit code a phase uses to report itself as skipped (e.g. P2P with < 2 NPUs).
 # Distinct from 0 (pass) and other non-zero codes (fail). Matches EX_TEMPFAIL.
@@ -117,7 +117,6 @@ def render_html(run_dir, phases, hostname, vendor, model, generated_at):
         "        th { background-color: #34495e; color: white; }",
         "        tr:nth-child(even) { background-color: #f9f9f9; }",
         "        .val-text { color: #27ae60; font-weight: bold; }",
-        "        .status-warn { color: #f39c12; font-weight: bold; }",
         "        .footer { margin-top: 20px; font-weight: bold; font-size: 1.1em; }",
         "        .npu-section { margin-bottom: 24px; }",
         "        .npu-title { background-color: #2c3e50; color: white;"
