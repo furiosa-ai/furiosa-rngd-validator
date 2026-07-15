@@ -206,3 +206,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Validator run output
+outputs/
+
+# ShareGPT benchmark dataset (downloaded, not tracked)
+scripts/ShareGPT_V3_unfiltered_cleaned_split.json
