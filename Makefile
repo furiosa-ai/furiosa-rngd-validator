@@ -1,7 +1,7 @@
 # Image tag tracks the furiosa-llm pin in requirements-furiosa.txt.
 VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements-furiosa.txt)
 IMAGE := furiosa-rngd-validator:$(VERSION)
-RUN_TESTS ?= diag,p2p,stress
+RUN_TESTS ?= diag,p2p,allgather,stress
 VALIDATE_NPUS ?=
 HF_CACHE_DIR ?= $(HOME)/.cache/huggingface
 
@@ -12,6 +12,7 @@ SHELL_SCRIPTS := \
 	scripts/lib/html.sh \
 	scripts/phases/run_diag.sh \
 	scripts/phases/run_p2p.sh \
+	scripts/phases/run_allgather.sh \
 	scripts/phases/run_stress.sh
 
 # Build the Docker image. Set NO_CACHE=1 to bypass the layer cache, e.g.
@@ -38,6 +39,8 @@ run:
 	    -e VALIDATE_NPUS="$(VALIDATE_NPUS)" \
 	    -e P2P_BUFFER_SIZE="$(P2P_BUFFER_SIZE)" \
 	    -e P2P_ACS_MODE="$(P2P_ACS_MODE)" \
+	    -e ALLGATHER_GROUP_SIZES="$(ALLGATHER_GROUP_SIZES)" \
+	    -e ALLGATHER_BUFFER_SIZE="$(ALLGATHER_BUFFER_SIZE)" \
 	    $(IMAGE)
 
 # Run all linters.

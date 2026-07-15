@@ -1,6 +1,6 @@
 # Furiosa RNGD Validator
 
-Validates a Furiosa RNGD-based server before production deployment. Three independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `stress` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans (phase reports embedded inline as collapsible sections), `summary.json` for tooling.
+Validates a Furiosa RNGD-based server before production deployment. Four independent phases — `diag` (hardware diagnostics), `p2p` (NPU-to-NPU bandwidth), `allgather` (multi-NPU allgather bandwidth), `stress` (LLM serving) — run in a single invocation. Each run writes one report tree: `index.html` for humans (phase reports embedded inline as collapsible sections), `summary.json` for tooling.
 
 **Sections:**
 
@@ -78,7 +78,7 @@ VALIDATE_NPUS=0 make run              # NPU 0 only
 VALIDATE_NPUS=0,2 make run            # NPUs 0 and 2
 ```
 
-`VALIDATE_NPUS` is honoured by the `diag`, `p2p`, and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` skip (it needs a pair) and report `SKIP` rather than fail.
+`VALIDATE_NPUS` is honoured by the `diag`, `p2p`, `allgather`, and `stress` phases. Omit it to run on all detected NPUs (default). Selecting a single NPU makes `p2p` and `allgather` skip (they need a pair) and report `SKIP` rather than fail.
 
 `make run` mounts a host Hugging Face cache into the container so weights survive across runs; it defaults to `$HOME/.cache/huggingface`. Point `HF_CACHE_DIR` elsewhere to reuse weights that already live under a different path:
 
@@ -114,6 +114,7 @@ outputs/run_<TIMESTAMP>/
 ├── summary.json      # machine-readable summary
 ├── diag/             # PF_result.log, diag.yaml, dmesg_*.log, exit_code.txt
 ├── p2p/              # PF_result.log, lspci-*, dmesg_*.log, exit_code.txt
+├── allgather/        # PF_result.log, dmesg_*.log, exit_code.txt
 ├── stress/           # PF_result.log, sensor_log_*.csv, dmesg_*.log, per-model results, exit_code.txt
 └── logs/stress/      # per-model per-NPU serve.log / random.log / sharegpt.log
 ```
@@ -129,9 +130,10 @@ outputs/run_<TIMESTAMP>/
   "run_dir": "/root/furiosa-rngd-validator/outputs/run_20260512_140000",
   "overall_status": "pass",
   "phases": [
-    {"phase": "diag",   "exit_code": 0, "status": "pass"},
-    {"phase": "p2p",    "exit_code": 0, "status": "pass"},
-    {"phase": "stress", "exit_code": 0, "status": "pass"}
+    {"phase": "diag",      "exit_code": 0, "status": "pass"},
+    {"phase": "p2p",       "exit_code": 0, "status": "pass"},
+    {"phase": "allgather", "exit_code": 0, "status": "pass"},
+    {"phase": "stress",    "exit_code": 0, "status": "pass"}
   ]
 }
 ```
@@ -140,7 +142,7 @@ Each phase's `status` is one of `pass` (exit 0), `skip` (exit 75 — phase could
 
 ## Phases
 
-Each phase tests a different aspect of the server and applies its own pass criterion. They run in fixed order `diag → p2p → stress`; the subset is selected by `RUN_TESTS` (default `diag,p2p,stress`).
+Each phase tests a different aspect of the server and applies its own pass criterion. They run in fixed order `diag → p2p → allgather → stress`; the subset is selected by `RUN_TESTS` (default `diag,p2p,allgather,stress`).
 
 ### `diag` — hardware diagnostics
 
@@ -165,6 +167,12 @@ Set `P2P_ACS_MODE=disable` (or `enable`) to run only that one sequence. A single
 
 **Pass:** `furiosa-hal-bench` completes without error in both passes. **Skip:** fewer than 2 NPUs are selected — the phase exits 75 and is reported `SKIP` (no pair to benchmark).
 
+### `allgather` — multi-NPU allgather bandwidth
+
+Runs `furiosa-hal-bench allgather --npus …` once per NPU group, for each group size in `ALLGATHER_GROUP_SIZES` (default `4`). Groups are formed from the selected NPUs: an exact multiple of the size chunks non-overlapping (e.g. 8 NPUs, size 4 → `[0,1,2,3]`, `[4,5,6,7]`); otherwise a final group is anchored at the last NPU so both the first and last NPU are exercised (e.g. 5 NPUs, size 4 → `[0,1,2,3]`, `[1,2,3,4]`). There is no built-in threshold; operators apply their own target spec.
+
+**Pass:** `furiosa-hal-bench` completes without error for every group. **Skip:** no group size fits the selected NPU count (e.g. fewer than 2 NPUs) — the phase exits 75 and is reported `SKIP`.
+
 ### `stress` — LLM serving stress
 
 For each model in `STRESS_MODELS`, the phase:
@@ -184,15 +192,16 @@ Two layers of knobs tune a run. `RUN_TESTS` and `HF_TOKEN` are set on the comman
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `RUN_TESTS` | `diag,p2p,stress` | Comma-separated phase list |
+| `RUN_TESTS` | `diag,p2p,allgather,stress` | Comma-separated phase list |
 | `HF_TOKEN` | — (required for `stress`) | Hugging Face token for model downloads |
+| `ALLGATHER_GROUP_SIZES` | `4` | Comma-separated NPU group sizes benchmarked by the `allgather` phase; a size larger than the selected NPU count is skipped |
 | `STRESS_MODELS` | `Llama-3.1-8B-Instruct:meta-llama,Qwen2.5-0.5B-Instruct:Qwen` | Stress-phase `name:org` pairs |
 | `STRESS_REVISION` | `v2026.2` | `furiosa-llm` model artifact revision |
 | `STRESS_RANDOM_TRIPLES` | `1024:1024:128,…,31744:1024:1` | Random-benchmark `in_len:out_len:concurrency` triples |
 | `SERVE_READY_MAX_ATTEMPTS` | `30` | `furiosa-llm serve` readiness probe attempts |
 | `SERVE_READY_INTERVAL` | `60` | Seconds between readiness probes |
 
-P2P buffer size (`P2P_BUFFER_SIZE`), stress base port (`STRESS_BASE_PORT`), and sensor poll interval (`SENSOR_POLL_INTERVAL`) also live in `scripts/config.env`.
+P2P buffer size (`P2P_BUFFER_SIZE`), allgather buffer size (`ALLGATHER_BUFFER_SIZE`), stress base port (`STRESS_BASE_PORT`), and sensor poll interval (`SENSOR_POLL_INTERVAL`) also live in `scripts/config.env`.
 
 ## Troubleshooting
 
