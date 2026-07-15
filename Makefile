@@ -1,7 +1,7 @@
 # Image tag tracks the furiosa-llm pin in requirements-furiosa.txt.
 VERSION ?= $(shell sed -n 's/^furiosa-llm==//p' requirements-furiosa.txt)
 IMAGE := furiosa-rngd-validator:$(VERSION)
-RUN_TESTS ?= diag,p2p,allgather,stress
+RUN_TESTS ?= diag,p2p,allgather,stress,serve
 VALIDATE_NPUS ?=
 HF_CACHE_DIR ?= $(HOME)/.cache/huggingface
 
@@ -13,7 +13,8 @@ SHELL_SCRIPTS := \
 	scripts/phases/run_diag.sh \
 	scripts/phases/run_p2p.sh \
 	scripts/phases/run_allgather.sh \
-	scripts/phases/run_stress.sh
+	scripts/phases/run_stress.sh \
+	scripts/phases/run_serve.sh
 
 # Build the Docker image. Set NO_CACHE=1 to bypass the layer cache, e.g.
 # to pick up a new furiosa-smi release without a toolkit version bump.
@@ -21,26 +22,31 @@ SHELL_SCRIPTS := \
 build:
 	DOCKER_BUILDKIT=1 docker build --progress=plain $(if $(NO_CACHE),--no-cache) -t $(IMAGE) .
 
-# Run the container with privileged + debugfs mounts. HF_TOKEN required when
-# RUN_TESTS includes stress.
+# Run the container with privileged + debugfs mounts.
 .PHONY: run
 run:
-	@if echo "$(RUN_TESTS)" | grep -wq stress && [ -z "$$HF_TOKEN" ]; then \
-	    echo "ERROR: HF_TOKEN is required for the 'stress' phase but is not set"; \
-	    exit 1; \
-	fi
 	docker run --rm -it --privileged \
 	    -v /sys/kernel/debug:/sys/kernel/debug \
 	    -v /lib/modules:/lib/modules:ro \
 	    -v $(CURDIR)/outputs:/root/furiosa-rngd-validator/outputs \
 	    -v $(HF_CACHE_DIR):/root/.cache/huggingface \
-	    -e HF_TOKEN \
 	    -e RUN_TESTS=$(RUN_TESTS) \
 	    -e VALIDATE_NPUS="$(VALIDATE_NPUS)" \
 	    -e P2P_BUFFER_SIZE="$(P2P_BUFFER_SIZE)" \
 	    -e P2P_ACS_MODE="$(P2P_ACS_MODE)" \
 	    -e ALLGATHER_GROUP_SIZES="$(ALLGATHER_GROUP_SIZES)" \
 	    -e ALLGATHER_BUFFER_SIZE="$(ALLGATHER_BUFFER_SIZE)" \
+	    -e STRESS_SCENARIO="$(STRESS_SCENARIO)" \
+	    -e STRESS_DURATION="$(STRESS_DURATION)" \
+	    -e SERVE_BASE_PORT="$(SERVE_BASE_PORT)" \
+	    -e SERVE_REVISION="$(SERVE_REVISION)" \
+	    -e SERVE_MODELS="$(SERVE_MODELS)" \
+	    -e SERVE_RANDOM_TRIPLES="$(SERVE_RANDOM_TRIPLES)" \
+	    -e SERVE_READY_MAX_ATTEMPTS="$(SERVE_READY_MAX_ATTEMPTS)" \
+	    -e SERVE_READY_INTERVAL="$(SERVE_READY_INTERVAL)" \
+	    -e SENSOR_POLL_INTERVAL="$(SENSOR_POLL_INTERVAL)" \
+	    -e FURIOSA_VENV="$(FURIOSA_VENV)" \
+	    -e VLLM_VENV="$(VLLM_VENV)" \
 	    $(IMAGE)
 
 # Run all linters.
