@@ -36,6 +36,8 @@ run:
 	    -e HF_TOKEN \
 	    -e RUN_TESTS=$(RUN_TESTS) \
 	    -e VALIDATE_NPUS="$(VALIDATE_NPUS)" \
+	    -e P2P_BUFFER_SIZE="$(P2P_BUFFER_SIZE)" \
+	    -e P2P_ACS_MODE="$(P2P_ACS_MODE)" \
 	    $(IMAGE)
 
 # Run all linters.

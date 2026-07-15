@@ -161,6 +161,8 @@ Runs `rngd-diag` to capture per-NPU sensor readings, PCIe link state, AER counte
 
 Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabling ACS on all upstream PCI bridges, once after re-enabling it. On exit the host's original ACS state is restored. The two passes are reported side-by-side so the effect of ACS can be compared. There is no built-in throughput or latency threshold; operators apply their own target spec for the host platform.
 
+Set `P2P_ACS_MODE=disable` (or `enable`) to run only that one sequence. A single-mode run does **not** restore ACS afterward — it leaves ACS in the requested state, so `P2P_ACS_MODE=disable` leaves ACS disabled on exit. Only the default both-passes run restores the pre-run state.
+
 **Pass:** `furiosa-hal-bench` completes without error in both passes. **Skip:** fewer than 2 NPUs are selected — the phase exits 75 and is reported `SKIP` (no pair to benchmark).
 
 ### `stress` — LLM serving stress
