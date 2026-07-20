@@ -6,5 +6,5 @@ pyyaml
 # CPU-only builds; +cpu wheels exist only on the PyTorch index above
 # (both x86_64 and aarch64). Must match the torch version furiosa-llm
 # requires exactly.
-torch==2.10.0+cpu
+torch==2.13.0
 torchvision==0.25.0+cpu
