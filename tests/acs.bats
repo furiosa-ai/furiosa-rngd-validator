@@ -54,6 +54,36 @@ EOF
   grep -q "0000:01:00.0 001f" "$FAKE_STATE"
 }
 
+# apply_acs_value should report a rejected write to the caller instead of dying
+# on it, so the enable/disable walk can finish the remaining bridges rather than
+# leaving them stranded at their previous ACSCtl value.
+@test "apply_acs_value warns and returns non-zero when the write fails" {
+  ACS_VALUE="0000"
+  cat >"$FAKE_BIN/setpci" <<'EOF'
+#!/bin/bash
+# Reads succeed; writes (the "=" form) fail, as an unwritable bridge would.
+if [[ "$*" == *"="* ]]; then
+  exit 1
+fi
+echo "001f"
+EOF
+  chmod +x "$FAKE_BIN/setpci"
+
+  run apply_acs_value "0000:01:00.0"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"WARN: failed to apply ACSCtl for 01:00.0 to 0x0000"* ]]
+}
+
+# A bridge with no readable ACSCtl register is skipped, not treated as a failure.
+@test "apply_acs_value succeeds when the bridge has no ACSCtl register" {
+  ACS_VALUE="0000"
+  printf '#!/bin/bash\nexit 1\n' >"$FAKE_BIN/setpci"
+  chmod +x "$FAKE_BIN/setpci"
+
+  run apply_acs_value "0000:01:00.0"
+  [[ "$status" -eq 0 ]]
+}
+
 # restore_acs_state should exit non-zero when the state file does not exist.
 @test "restore_acs_state errors on missing state file" {
   run restore_acs_state "/nonexistent/$$"
@@ -76,4 +106,27 @@ EOF
   restore_acs_state "$FAKE_STATE"
   grep -q "ECAP_ACS+0x6.W=0x001f" "$SETPCI_CALLS"
   rm -f "$SETPCI_CALLS"
+}
+
+# A bridge left at the benchmark's value still has ACS off, so a failed write must
+# reach the caller -- but every remaining bridge is still attempted first.
+@test "restore_acs_state warns, keeps going, and returns non-zero on a failed write" {
+  printf '0000:01:00.0 001f\n0000:02:00.0 001f\n' >"$FAKE_STATE"
+  cat >"$FAKE_BIN/setpci" <<'EOF'
+#!/bin/bash
+# Reads succeed; writes (the "=" form) fail, as an unwritable bridge would.
+if [[ "$*" == *"="* ]]; then
+  exit 1
+fi
+echo "0000"
+EOF
+  chmod +x "$FAKE_BIN/setpci"
+
+  run restore_acs_state "$FAKE_STATE"
+  [[ "$status" -ne 0 ]]
+  [[ "$output" == *"WARN: failed to restore ACSCtl for 01:00.0"* ]]
+  [[ "$output" == *"WARN: failed to restore ACSCtl for 02:00.0"* ]]
+  [[ "$output" == *"ERROR: ACS restore failed on one or more bridges"* ]]
+  # The clean-restore line must not appear -- it would read as a successful restore.
+  [[ "$output" != *"ACS state restored from"* ]]
 }

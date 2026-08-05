@@ -352,8 +352,6 @@ echo "    <p><strong>Total Duration:</strong> $TOTAL_DURATION</p>" >>"$HTML_REPO
   echo '    </div>'
 } >>"$HTML_REPORT"
 
-html_close "$HTML_REPORT"
-
 echo -e "HTML report saved to: ${YELLOW}$HTML_REPORT${NC}"
 
 exit "$FAILED"
