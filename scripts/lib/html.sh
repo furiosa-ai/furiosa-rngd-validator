@@ -12,9 +12,3 @@ html_init() {
     echo "    <p><strong>Generated:</strong> $(date '+%Y-%m-%d %H:%M:%S')</p>"
   } >"$file"
 }
-
-# Args: file_path
-html_close() {
-  local file="$1"
-  : # fragment needs no closing wrapper
-}
