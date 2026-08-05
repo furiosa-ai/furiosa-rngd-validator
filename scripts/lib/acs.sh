@@ -29,7 +29,11 @@ apply_acs_value() {
   cur="$(setpci -s "${bdf#0000:}" ECAP_ACS+0x6.W 2>/dev/null || true)"
   [[ -n "$cur" ]] || return 0
   echo "  Apply ACSCtl: ${bdf#0000:}  (0x$cur -> 0x$ACS_VALUE)"
-  setpci -s "${bdf#0000:}" "ECAP_ACS+0x6.W=0x$ACS_VALUE"
+  # Best-effort like restore_acs_state: report, don't abort the walk.
+  setpci -s "${bdf#0000:}" "ECAP_ACS+0x6.W=0x$ACS_VALUE" || {
+    echo "WARN: failed to apply ACSCtl for ${bdf#0000:} to 0x$ACS_VALUE" >&2
+    return 1
+  }
 }
 
 save_acs_state() {
@@ -54,6 +58,7 @@ save_acs_state() {
 restore_acs_state() {
   local state_file="$1"
   local bdf value cur
+  local failed=0
   [[ -f "$state_file" ]] || {
     echo "ERROR: state file not found: $state_file" >&2
     return 1
@@ -70,8 +75,15 @@ restore_acs_state() {
     # so a single bad bridge cannot strand the rest with ACS left disabled.
     if ! setpci -s "${bdf#0000:}" "ECAP_ACS+0x6.W=0x$value"; then
       echo "WARN: failed to restore ACSCtl for ${bdf#0000:} to 0x$value" >&2
+      failed=1
     fi
   done <"$state_file"
+  # A bridge stuck at the benchmark's value still has ACS off, silently dropping
+  # the isolation the firmware set up -- never report that as a clean restore.
+  if [[ "$failed" -ne 0 ]]; then
+    echo "ERROR: ACS restore failed on one or more bridges" >&2
+    return 1
+  fi
   echo "ACS state restored from $state_file"
 }
 
@@ -144,6 +156,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         echo "ERROR: --mode restore requires <file>" >&2
         exit 1
       }
+      # `set -e` aborts here on a partial restore, so the exit 0 below is only
+      # reached when every bridge took its saved value.
       restore_acs_state "$STATE_FILE"
       exit 0
       ;;
@@ -160,14 +174,21 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     exit 1
   }
 
+  APPLY_FAILED=0
   for bridge in "${bridge_bdfs[@]}"; do
     echo "=== Bridge: ${bridge#0000:} ==="
     if has_acs_cap "$bridge"; then
-      apply_acs_value "$bridge"
+      # `||` keeps `set -e` from aborting the walk on the first bad bridge.
+      apply_acs_value "$bridge" || APPLY_FAILED=1
     else
       [[ "$DEBUG" == "1" ]] && echo "  No ACS capability for ${bridge#0000:}"
     fi
   done
+
+  if [[ "$APPLY_FAILED" -ne 0 ]]; then
+    echo "ERROR: ACS $MODE sequence failed on one or more bridges" >&2
+    exit 1
+  fi
 
   echo "ACS $MODE sequence completed successfully"
 fi

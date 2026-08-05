@@ -213,7 +213,13 @@ Five common failure modes.
 
 **Stress phase hangs at "Model on port X not ready"** — `furiosa-llm serve` takes minutes on first run (compilation + weight download). The default budget is `SERVE_READY_MAX_ATTEMPTS × SERVE_READY_INTERVAL` = 30 × 60 s = 30 min; tune those env vars for your environment.
 
-**ACS not restored after a `p2p` abort** — `run_p2p.sh` saves the host's ACS state before disabling it and installs an `EXIT/INT/TERM` trap that restores it on exit, so a normal abort returns ACS to its pre-run state. A `SIGKILL` (e.g. `docker kill`) bypasses the trap and can leave ACS in a non-original state; reboot to re-apply the firmware ACS configuration.
+**ACS not restored after a `p2p` abort** — `run_p2p.sh` saves the host's ACS state before disabling it and installs an `EXIT/INT/TERM` trap that restores it on exit, so a normal abort returns ACS to its pre-run state. A `SIGKILL` (e.g. `docker kill`) bypasses the trap and can leave ACS in a non-original state. The pre-run per-bridge values are written to `<run_dir>/p2p/acs_init_state` before anything is changed, so re-apply the ACS configuration manually with `sudo bash scripts/lib/acs.sh --mode restore <run_dir>/p2p/acs_init_state`.
+
+**`p2p` fails with "ACS \<mode\> sequence failed on one or more bridges"** — a bridge rejected the `ACSCtl` write (see the preceding `WARN:` lines for which). The sequence still walks every remaining bridge, so only the named bridges are left at their previous value; the phase then fails rather than benchmarking a host that is not fully in the requested ACS state.
+
+**`p2p` fails with "ACS restore FAILED"** — a bridge rejected the write that would return it to its pre-run `ACSCtl` value, so it is still at the benchmark's value and has lost the isolation the firmware configured. The phase fails even if the benchmark itself passed. `PF_result.log` ends with the exact retry command — re-apply the ACS configuration manually before using this host.
+
+**`<run_dir>/p2p/acs_init_state` left behind** — not a failure mode in itself, but the marker of one: the file holds the per-bridge `ACSCtl` values from before the run and is removed only when the phase passes. Any run that failed or was interrupted keeps it, including a `P2P_ACS_MODE=disable`/`enable` run that set ACS as asked and then failed in the test — that path deliberately skips the restore, so this file is the only way back. Roll back with `sudo bash scripts/lib/acs.sh --mode restore <run_dir>/p2p/acs_init_state`.
 
 **First stress run downloads `vllm` and `ShareGPT_V3_unfiltered_cleaned_split.json` into `scripts/`.** Non-Docker runs reuse them on subsequent runs. Docker runs use `--rm` and re-download each time; for repeated or air-gapped Docker use, bake the artifacts into the image. For air-gapped non-Docker use, prime the caches on a connected host first and copy them over.
 
