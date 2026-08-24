@@ -90,8 +90,8 @@ resolve_npus() {
 # "0 1 2 3" / "4 5 6 7"); otherwise a final group anchored at the last NPU is
 # appended so both the first and last NPU are covered (e.g. 5 NPUs, size 4 ->
 # "0 1 2 3" / "1 2 3 4"). Groups follow position in $NPUS, so a non-contiguous
-# VALIDATE_NPUS selection is grouped in its sorted order. Caller must ensure
-# size <= ${#NPUS[@]}.
+# VALIDATE_NPUS selection is grouped in the order provided (after normalization).
+# Caller must ensure size <= ${#NPUS[@]}.
 npu_groups() {
   local size=$1
   local n=${#NPUS[@]}
