@@ -56,7 +56,16 @@ IFS=',' read -ra GROUP_SIZES <<<"$ALLGATHER_GROUP_SIZES"
 declare -a SUMMARY_DATA=()
 RAN_ANY=0
 
-for size in "${GROUP_SIZES[@]}"; do
+for raw_size in "${GROUP_SIZES[@]}"; do
+  size=${raw_size//[[:space:]]/}
+  [[ $size =~ ^[0-9]+$ ]] || {
+    echo -e "${YELLOW}[allgather] Invalid ALLGATHER_GROUP_SIZES entry '$raw_size' (ALLGATHER_GROUP_SIZES='$ALLGATHER_GROUP_SIZES'); expected comma-separated integers >= 2.${NC}" | tee -a "$LOG_FILE"
+    exit 1
+  }
+  ((size >= 2)) || {
+    echo -e "${YELLOW}[allgather] Invalid group size $size: must be >= 2.${NC}" | tee -a "$LOG_FILE"
+    exit 1
+  }
   if ((size > ${#NPUS[@]})); then
     echo -e "${YELLOW}[allgather] Skipping group size $size: requires $size NPUs, but ${#NPUS[@]} selected (${NPUS[*]}).${NC}" | tee -a "$LOG_FILE"
     continue
@@ -87,7 +96,7 @@ for size in "${GROUP_SIZES[@]}"; do
     LAT=${LAT:-"[N/A]"}
     THR=${THR:-"[N/A]"}
 
-    SUMMARY_DATA+=("$npus_csv|$LAT|$THR")
+    SUMMARY_DATA+=("size $size - NPUs $npus_csv|$LAT|$THR")
 
     rm -f "$STEP_LOG"
     echo >>"$LOG_FILE"
