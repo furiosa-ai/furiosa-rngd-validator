@@ -19,7 +19,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 HEALTHCHECK NONE
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV RUN_TESTS=diag,p2p,stress
+ENV RUN_TESTS=diag,p2p,allgather,stress
 
 ENV HOME=/root
 ENV VALIDATOR_DIR=$HOME/furiosa-rngd-validator

@@ -7,7 +7,7 @@ import json
 import pathlib
 import socket
 
-PHASES = ["diag", "p2p", "stress"]
+PHASES = ["diag", "p2p", "allgather", "stress"]
 
 # Exit code a phase uses to report itself as skipped (e.g. P2P with < 2 NPUs).
 # Distinct from 0 (pass) and other non-zero codes (fail). Matches EX_TEMPFAIL.

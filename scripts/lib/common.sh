@@ -84,6 +84,31 @@ resolve_npus() {
   fi
 }
 
+# Split the resolved $NPUS into groups of the given size, echoing one
+# space-separated group per line. When the NPU count is an exact multiple of
+# the size the groups are non-overlapping chunks (e.g. 8 NPUs, size 4 ->
+# "0 1 2 3" / "4 5 6 7"); otherwise a final group anchored at the last NPU is
+# appended so both the first and last NPU are covered (e.g. 5 NPUs, size 4 ->
+# "0 1 2 3" / "1 2 3 4"). Groups follow position in $NPUS, so a non-contiguous
+# VALIDATE_NPUS selection is grouped in the order provided (after normalization).
+# Caller must ensure size <= ${#NPUS[@]}.
+npu_groups() {
+  local size=$1
+  local n=${#NPUS[@]}
+  local -a starts=()
+  local full=$((n / size)) k
+  for ((k = 0; k < full; k++)); do starts+=($((k * size))); done
+  ((n % size != 0)) && starts+=($((n - size)))
+
+  local s i
+  local -a grp
+  for s in "${starts[@]}"; do
+    grp=()
+    for ((i = s; i < s + size; i++)); do grp+=("${NPUS[i]}"); done
+    echo "${grp[*]}"
+  done
+}
+
 # Args: out_dir [timestamp]
 capture_dmesg() {
   local out_dir="$1"

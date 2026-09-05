@@ -7,7 +7,7 @@ thresholds.py, and writes PF_result.log and PF_result.html via render.py.
 import argparse
 import os
 import sys
-from typing import Any
+from typing import Any, TextIO, cast
 
 import yaml
 
@@ -109,7 +109,8 @@ def main() -> None:
     log_filename  = os.path.join(args.output_dir, "PF_result.log")
     html_filename = os.path.join(args.output_dir, "PF_result.html")
 
-    sys.stdout = render.Logger(log_filename)
+    # Logger duck-types stdout; the cast satisfies every mypy version.
+    sys.stdout = cast("TextIO", render.Logger(log_filename))
 
     try:
         with open(args.yaml_file) as f:
