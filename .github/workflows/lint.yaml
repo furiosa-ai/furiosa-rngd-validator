@@ -21,7 +21,7 @@ jobs:
       # shfmt is a shell formatter.
       - name: Install shfmt
         env:
-          SHFMT_VERSION: v3.14.0
+          SHFMT_VERSION: v3.14.1
         # yamllint disable rule:line-length
         run: |
           # --fail makes curl exit non-zero on 4xx, so a bad URL fails
