@@ -32,7 +32,7 @@ resolve_npus() { declare -ga NPUS=(0 1); NPU_COUNT=2; }
 capture_dmesg() { :; }
 STUB
 
-  printf '#!/bin/bash\nhtml_init() { : >"$1"; }\n' >"$TESTROOT/lib/html.sh"
+  printf '#!/bin/bash\nsource "%s"\n' "${BATS_TEST_DIRNAME}/../scripts/lib/html.sh" >"$TESTROOT/lib/html.sh"
   # The real sensor monitor reads NPU sysfs; stub it to just idle.
   printf '#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n' >"$TESTROOT/lib/sensor_monitor.py"
 

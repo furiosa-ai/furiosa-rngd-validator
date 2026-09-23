@@ -23,10 +23,20 @@ has_acs_cap() {
   echo "$out" | grep -qiE "Access Control Services|ACSCap:|ACSCtl:"
 }
 
+# Every PCI bridge BDF, one per line.
+list_bridges() {
+  lspci -D | awk '/PCI bridge/{print $1}' | sort -u
+}
+
+# Echo a bridge's ACSCtl value, empty if it has none. Args: bdf
+read_acsctl() {
+  setpci -s "${1#0000:}" ECAP_ACS+0x6.W 2>/dev/null || true
+}
+
 apply_acs_value() {
   local bdf="$1"
   local cur
-  cur="$(setpci -s "${bdf#0000:}" ECAP_ACS+0x6.W 2>/dev/null || true)"
+  cur="$(read_acsctl "$bdf")"
   [[ -n "$cur" ]] || return 0
   echo "  Apply ACSCtl: ${bdf#0000:}  (0x$cur -> 0x$ACS_VALUE)"
   # Best-effort like restore_acs_state: report, don't abort the walk.
@@ -40,7 +50,7 @@ save_acs_state() {
   local state_file="$1"
   local bridge cur
   local -a bridge_bdfs=()
-  mapfile -t bridge_bdfs < <(lspci -D | awk '/PCI bridge/{print $1}' | sort -u)
+  mapfile -t bridge_bdfs < <(list_bridges)
   [[ "${#bridge_bdfs[@]}" -gt 0 ]] || {
     echo "ERROR: No PCI bridges found" >&2
     return 1
@@ -48,7 +58,7 @@ save_acs_state() {
   : >"$state_file"
   for bridge in "${bridge_bdfs[@]}"; do
     if has_acs_cap "$bridge"; then
-      cur="$(setpci -s "${bridge#0000:}" ECAP_ACS+0x6.W 2>/dev/null || true)"
+      cur="$(read_acsctl "$bridge")"
       [[ -n "$cur" ]] && printf '%s %s\n' "$bridge" "$cur" >>"$state_file"
     fi
   done
@@ -65,21 +75,19 @@ restore_acs_state() {
   }
   while read -r bdf value; do
     [[ -n "$bdf" && -n "$value" ]] || continue
-    cur="$(setpci -s "${bdf#0000:}" ECAP_ACS+0x6.W 2>/dev/null || true)"
+    cur="$(read_acsctl "$bdf")"
     if [[ -n "$cur" ]]; then
       echo "  Restore ACSCtl: ${bdf#0000:}  (0x$cur -> 0x$value)"
     else
       echo "  Restore ACSCtl: ${bdf#0000:}  (-> 0x$value)"
     fi
-    # Best-effort: keep restoring the remaining bridges even if one write fails,
-    # so a single bad bridge cannot strand the rest with ACS left disabled.
+    # Best-effort: one bad bridge must not strand the rest with ACS disabled.
     if ! setpci -s "${bdf#0000:}" "ECAP_ACS+0x6.W=0x$value"; then
       echo "WARN: failed to restore ACSCtl for ${bdf#0000:} to 0x$value" >&2
       failed=1
     fi
   done <"$state_file"
-  # A bridge stuck at the benchmark's value still has ACS off, silently dropping
-  # the isolation the firmware set up -- never report that as a clean restore.
+  # A bridge left at the benchmark's value has lost its isolation: not clean.
   if [[ "$failed" -ne 0 ]]; then
     echo "ERROR: ACS restore failed on one or more bridges" >&2
     return 1
@@ -167,7 +175,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       ;;
   esac
 
-  mapfile -t bridge_bdfs < <(lspci -D | awk '/PCI bridge/{print $1}' | sort -u)
+  mapfile -t bridge_bdfs < <(list_bridges)
 
   [[ "${#bridge_bdfs[@]}" -gt 0 ]] || {
     echo "ERROR: No PCI bridges found" >&2

@@ -17,41 +17,20 @@ cd "$VALIDATOR_DIR/scripts"
 
 RUN_TESTS=${RUN_TESTS:-"diag,p2p,allgather,stress,serve"}
 
+# Tolerates spaces around the commas ("diag, p2p"). Args: phase
 should_run_test() {
-  for test in $(echo "$RUN_TESTS" | tr ',' ' '); do
-    [[ "$test" = "$1" ]] && return 0
-  done
-  return 1
+  [[ ",${RUN_TESTS//[[:space:]]/}," == *",$1,"* ]]
 }
 
-run_phase() {
-  local phase="$1"
-  local script="$2"
-  local rc=0
-  "./$script" || rc=$?
+# A failing phase does not stop the run; its exit code is recorded for
+# generate_index.py.
+for phase in diag p2p allgather stress serve; do
+  should_run_test "$phase" || continue
+  rc=0
+  "./phases/run_$phase.sh" || rc=$?
   mkdir -p "$RUN_DIR/$phase"
   echo "$rc" >"$RUN_DIR/$phase/exit_code.txt"
-}
-
-if should_run_test "diag"; then
-  run_phase "diag" "phases/run_diag.sh"
-fi
-
-if should_run_test "p2p"; then
-  run_phase "p2p" "phases/run_p2p.sh"
-fi
-
-if should_run_test "allgather"; then
-  run_phase "allgather" "phases/run_allgather.sh"
-fi
-
-if should_run_test "stress"; then
-  run_phase "stress" "phases/run_stress.sh"
-fi
-
-if should_run_test "serve"; then
-  run_phase "serve" "phases/run_serve.sh"
-fi
+done
 
 python3 "$VALIDATOR_DIR/scripts/tools/generate_index.py" --run-dir "$RUN_DIR"
 
