@@ -16,7 +16,7 @@ mkdir -p "$RUN_DIR"
 
 cd "$VALIDATOR_DIR/scripts"
 
-RUN_TESTS=${RUN_TESTS:-"diag,p2p,stress"}
+RUN_TESTS=${RUN_TESTS:-"diag,p2p,allgather,stress"}
 
 should_run_test() {
   for test in $(echo "$RUN_TESTS" | tr ',' ' '); do
@@ -46,6 +46,10 @@ fi
 
 if should_run_test "p2p"; then
   run_phase "p2p" "phases/run_p2p.sh"
+fi
+
+if should_run_test "allgather"; then
+  run_phase "allgather" "phases/run_allgather.sh"
 fi
 
 if should_run_test "stress"; then
