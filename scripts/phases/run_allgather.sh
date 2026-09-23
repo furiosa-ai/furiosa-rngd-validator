@@ -51,6 +51,10 @@ html_init "$HTML_FILE" "Furiosa Allgather Benchmark Report"
 
 echo -e "${BOLD}All results will be saved in: ${YELLOW}$OUTPUT_ALLGATHER${NC}" | tee -a "$LOG_FILE"
 
+# Redirected, not piped: a pipeline would run this in a subshell, where the ACS
+# rollback trap it arms would die with that subshell instead of covering the run.
+apply_acs_mode "$OUTPUT_ALLGATHER" > >(tee -a "$LOG_FILE") 2>&1
+
 IFS=',' read -ra GROUP_SIZES <<<"$ALLGATHER_GROUP_SIZES"
 
 declare -a SUMMARY_DATA=()

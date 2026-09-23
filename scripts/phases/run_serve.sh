@@ -71,6 +71,10 @@ done
   exit 1
 }
 
+# After validation, so a config error fails before any bridge is written, and
+# before `trap cleanup EXIT` below takes over the rollback from apply_acs_mode.
+apply_acs_mode "$OUTPUT_SERVE"
+
 # Pre-fetch weights into the (mounted) HF cache up front. `hf download` is
 # cache-aware -- it verifies each file and fetches only what is missing, so a
 # warm cache is a no-op; a cold cache fails fast here instead of mid-serve.
@@ -271,6 +275,8 @@ declare -a serve_ports=()
 # `trap '' INT TERM` inside the handler.
 # shellcheck disable=SC2329,SC2317
 cleanup() {
+  # First statement: $? is still the status that triggered the trap.
+  local rc=$?
   # Ignore repeat INT/TERM so teardown completes atomically; children inherit
   # this SIG_IGN across exec.
   trap '' INT TERM
@@ -283,6 +289,9 @@ cleanup() {
     kill "$MONITOR_PID" 2>/dev/null || true
     wait "$MONITOR_PID" 2>/dev/null || true
   fi
+  # This trap replaced the one apply_acs_mode arms, so the ACS rollback an
+  # aborted run needs has to be driven from here. Exits with rc.
+  acs_restore_if_aborted "${ACS_STATE_FILE:-}" "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT

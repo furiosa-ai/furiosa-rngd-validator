@@ -24,7 +24,12 @@ mkdir -p "$OUTPUT_DIAG"
 YAML_NAME="${OUTPUT_DIAG}/diag.yaml"
 LOG_FILE="${OUTPUT_DIAG}/result_diag.log"
 
-exec > >(tee -a "$LOG_FILE") 2>&1
+# tee ignores INT/TERM so it outlives a Ctrl-C: it is this script's only stdout,
+# and writing to a dead one kills the shell with SIGPIPE mid-cleanup.
+exec > >(
+  trap '' INT TERM
+  tee -a "$LOG_FILE"
+) 2>&1
 
 RNGD_DIAG="${RNGD_DIAG:-rngd-diag}"
 TOOLS_DIR="$VALIDATOR_DIR/scripts/tools"
@@ -52,6 +57,8 @@ if [[ -n "${VALIDATE_NPUS:-}" ]]; then
   DIAG_NPU_ARGS=(--npu "$VALIDATE_NPUS")
   echo "Using specified NPUs: $VALIDATE_NPUS"
 fi
+
+apply_acs_mode "$OUTPUT_DIAG"
 
 echo "[1/2] Running $RNGD_DIAG..."
 "$RNGD_DIAG" "${DIAG_NPU_ARGS[@]}" -o "$YAML_NAME"

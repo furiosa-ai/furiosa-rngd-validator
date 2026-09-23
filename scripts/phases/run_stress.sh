@@ -45,6 +45,8 @@ esac
 
 resolve_npus
 
+apply_acs_mode "$OUTPUT_STRESS"
+
 MONITOR_PID=""
 # Initialized before the traps so cleanup can safely reference it under `set -u`
 # even if a signal arrives before any stress test is launched.
@@ -55,6 +57,8 @@ declare -a stress_pids=()
 # below, an indirection shellcheck cannot follow.
 # shellcheck disable=SC2329,SC2317
 cleanup() {
+  # First statement: $? is still the status that triggered the trap.
+  local rc=$?
   # Ignore repeat INT/TERM so teardown completes atomically; children inherit
   # this SIG_IGN across exec.
   trap '' INT TERM
@@ -75,6 +79,9 @@ cleanup() {
     kill "$MONITOR_PID" 2>/dev/null || true
     wait "$MONITOR_PID" 2>/dev/null || true
   fi
+  # This trap replaced the one apply_acs_mode arms, so the ACS rollback an
+  # aborted run needs has to be driven from here. Exits with rc.
+  acs_restore_if_aborted "${ACS_STATE_FILE:-}" "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT

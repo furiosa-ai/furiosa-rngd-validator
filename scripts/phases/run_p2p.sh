@@ -1,6 +1,6 @@
 #!/bin/bash
 # P2P bandwidth test phase.
-# Runs `furiosa-hal-bench p2p` between every NPU pair. P2P_ACS_MODE selects
+# Runs `furiosa-hal-bench p2p` between every NPU pair. ACS_MODE selects
 # which ACS configurations to test on all upstream PCI bridges: empty
 # runs twice (once ACS disabled, once ACS re-enabled) so the numbers can be
 # compared, `disable` runs only the ACS-disabled pass, `enable` only the
@@ -131,19 +131,13 @@ html_init "$HTML_FILE" "Furiosa P2P Test Report"
 
 echo -e "${BOLD}All results will be saved in: ${YELLOW}$OUTPUT_P2P${NC}" | tee -a "$LOG_FILE"
 
-case "$P2P_ACS_MODE" in
-  "" | disable | enable) ;;
-  *)
-    echo -e "${YELLOW}[p2p] Invalid P2P_ACS_MODE='$P2P_ACS_MODE'; expected disable|enable (empty runs both).${NC}" | tee -a "$LOG_FILE"
-    exit 1
-    ;;
-esac
+validate_acs_mode 2>&1 | tee -a "$LOG_FILE"
 
 # In the run's output dir, not /tmp: on any run that ends badly this file is the
 # only record of the pre-run per-bridge ACSCtl values, and it has to outlive the
 # container. Created empty up front so a restore in the window before `--mode
 # save` runs finds a file rather than erroring.
-ACS_STATE_FILE="${OUTPUT_P2P}/acs_init_state"
+ACS_STATE_FILE="$(acs_state_file "$OUTPUT_P2P")"
 : >"$ACS_STATE_FILE"
 # Set only after an apply sequence completes; `set -e` aborts on failure, so
 # reaching the assignment means the host really is in the requested state.
@@ -152,22 +146,22 @@ ACS_APPLY_OK=0
 # INT/TERM only re-exit so an abort funnels through the EXIT handler instead of
 # resuming past the interrupted test into the next ACS step.
 #
-# A single-mode run (P2P_ACS_MODE=disable|enable) deliberately LEAVES ACS as set,
-# so it skips restore -- but only if the sequence succeeded. A part-way failure
-# restores like any other abort.
+# A single-mode run (ACS_MODE=disable|enable) deliberately LEAVES ACS as set, so
+# it skips restore -- but only if the sequence succeeded AND the phase ended
+# clean. Any abort restores, like every other phase.
 cleanup() {
   # First statement: $? is still the status that triggered the trap.
   local rc=$?
   # Ignore repeat INT/TERM so restore is atomic; the acs.sh child inherits
   # SIG_IGN and cannot be killed mid-restore.
   trap '' INT TERM
-  if [[ "$ACS_APPLY_OK" -eq 1 ]] &&
-    [[ "${P2P_ACS_MODE:-}" == "disable" || "${P2P_ACS_MODE:-}" == "enable" ]]; then
-    echo -e "\n${YELLOW}[cleanup] P2P_ACS_MODE=${P2P_ACS_MODE:-}: leaving ACS as set (no restore).${NC}" | tee -a "$LOG_FILE" || true
+  if [[ "$rc" -eq 0 && "$ACS_APPLY_OK" -eq 1 ]] &&
+    [[ "${ACS_MODE:-}" == "disable" || "${ACS_MODE:-}" == "enable" ]]; then
+    echo -e "\n${YELLOW}[cleanup] ACS_MODE=${ACS_MODE:-}: leaving ACS as set (no restore).${NC}" | tee -a "$LOG_FILE" || true
     save_lspci_info "final" || true
   else
     echo -e "\n${YELLOW}[cleanup] Restoring ACS to initial state...${NC}" | tee -a "$LOG_FILE" || true
-    if bash "$SCRIPTS_ROOT/lib/acs.sh" --mode restore "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"; then
+    if bash "$ACS_SH" --mode restore "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"; then
       save_lspci_info "restored" || true
     else
       # Bridges left with ACS off outlive the run -- fail even if the test passed.
@@ -177,8 +171,8 @@ cleanup() {
     fi
   fi
 
-  echo -e "${YELLOW}[cleanup] Pre-run ACS state kept at $ACS_STATE_FILE -- re-apply manually with:${NC}" | tee -a "$LOG_FILE" || true
-  echo -e "${YELLOW}[cleanup]   sudo bash $SCRIPTS_ROOT/lib/acs.sh --mode restore $ACS_STATE_FILE${NC}" | tee -a "$LOG_FILE" || true
+  echo -e "${YELLOW}[cleanup] Pre-run ACS state kept at $(repo_rel "$ACS_STATE_FILE") -- from the repo root, re-apply manually with:${NC}" | tee -a "$LOG_FILE" || true
+  echo -e "${YELLOW}[cleanup]   $(acs_rollback_cmd "$ACS_STATE_FILE")${NC}" | tee -a "$LOG_FILE" || true
 
   # Here, not on the happy path: an abort is exactly when dmesg is wanted.
   capture_dmesg "$OUTPUT_P2P" || true
@@ -203,24 +197,25 @@ trap 'exit 143' TERM
 save_lspci_info "initial"
 
 # Up front, so the EXIT trap can restore no matter which sequences below ran.
-bash "$SCRIPTS_ROOT/lib/acs.sh" --mode save "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
+bash "$ACS_SH" --mode save "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
 
-if [[ -z "$P2P_ACS_MODE" || "$P2P_ACS_MODE" == disable ]]; then
-  echo -e "\n${BOLD}[STEP 1] ACS Disable Sequence${NC}" | tee -a "$LOG_FILE"
-  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode disable 2>&1 | tee -a "$LOG_FILE"
+# Empty ACS_MODE benchmarks both configurations, disable first so the pair can be
+# compared in one report; a single mode benchmarks only that one.
+ACS_SEQUENCES=(disable enable)
+[[ -z "$ACS_MODE" ]] || ACS_SEQUENCES=("$ACS_MODE")
+
+STEP=1
+for mode in "${ACS_SEQUENCES[@]}"; do
+  echo -e "\n${BOLD}[STEP $STEP] ACS ${mode^} Sequence${NC}" | tee -a "$LOG_FILE"
+  # Shared with the other phases: rolls back a part-way apply itself, then the
+  # non-zero return trips `set -e` into the cleanup trap.
+  acs_apply "$mode" "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
   ACS_APPLY_OK=1
-  save_lspci_info "ACS_Disabled"
-  run_p2p_test "after ACS disable"
+  save_lspci_info "ACS_$mode"
+  run_p2p_test "after ACS $mode"
   echo >>"$LOG_FILE"
-fi
-
-if [[ -z "$P2P_ACS_MODE" || "$P2P_ACS_MODE" == enable ]]; then
-  echo -e "\n${BOLD}[STEP 2] ACS Enable Sequence${NC}" | tee -a "$LOG_FILE"
-  bash "$SCRIPTS_ROOT/lib/acs.sh" --mode enable 2>&1 | tee -a "$LOG_FILE"
-  ACS_APPLY_OK=1
-  save_lspci_info "ACS_Enabled"
-  run_p2p_test "after ACS enable"
-fi
+  STEP=$((STEP + 1))
+done
 
 cat <<EOF >>"$HTML_FILE"
     <div class="section">
