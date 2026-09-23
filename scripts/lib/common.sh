@@ -202,3 +202,107 @@ capture_dmesg() {
   dmesg >"${out_dir}/dmesg_${ts}.log"
 }
 
+# Activate $FURIOSA_VENV when present, then require each command on PATH.
+# Exits 1. Args: command...
+use_furiosa_venv() {
+  export PATH="$HOME/.local/bin:$PATH"
+  if [[ -f "${FURIOSA_VENV}/bin/activate" ]]; then
+    # shellcheck source=/dev/null
+    source "${FURIOSA_VENV}/bin/activate"
+  fi
+  local cmd
+  for cmd; do
+    command -v "$cmd" &>/dev/null || {
+      echo "Error: $cmd not found. Set FURIOSA_VENV to the virtualenv path." >&2
+      exit 1
+    }
+  done
+}
+
+# Sample NPU sensors into <out_dir>/sensor_log_*.csv in the background; sets
+# MONITOR_PID. Args: out_dir
+start_sensor_monitor() {
+  python3 "$SCRIPTS_ROOT/lib/sensor_monitor.py" --output "$1" \
+    --timestamp "$TIMESTAMP" --interval "$SENSOR_POLL_INTERVAL" &
+  MONITOR_PID=$!
+  echo -e "${CYAN}NPU Sensor Monitoring started (PID: $MONITOR_PID)${NC}"
+}
+
+stop_sensor_monitor() {
+  if [[ -n "${MONITOR_PID:-}" ]] && kill -0 "$MONITOR_PID" 2>/dev/null; then
+    echo -e "${CYAN}[cleanup] Stopping sensor monitor (PID: $MONITOR_PID)${NC}" >&2 || true
+    stop_pids "$MONITOR_PID"
+  fi
+}
+
+# Kill the given PIDs, then wait for them so their NPUs are released.
+# Args: pid...
+stop_pids() {
+  local pid
+  for pid; do kill "$pid" 2>/dev/null || true; done
+  for pid; do wait "$pid" 2>/dev/null || true; done
+}
+
+# Args: seconds
+format_duration() {
+  printf '%02d:%02d:%02d' $(($1 / 3600)) $(($1 % 3600 / 60)) $(($1 % 60))
+}
+
+# Echo a message between rules, to the terminal and $LOG_FILE. Args: message
+step_header() {
+  local rule="${BOLD}--------------------------------------------------${NC}"
+  echo -e "$rule\n$1\n$rule" | tee -a "$LOG_FILE"
+}
+
+# Run `furiosa-hal-bench "$@"`, showing its output and appending it to
+# $LOG_FILE, then set BENCH_LAT / BENCH_THR to the first time: / thrpt:
+# result ("[N/A]" if absent). Args: furiosa-hal-bench args...
+hal_bench() {
+  local step clean
+  step=$(mktemp "$(dirname "$LOG_FILE")/step_XXXX.tmp")
+  furiosa-hal-bench "$@" 2>&1 | tee "$step"
+  cat "$step" >>"$LOG_FILE"
+  echo >>"$LOG_FILE"
+  clean=$(sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g" "$step")
+  rm -f "$step"
+  BENCH_LAT=$(grep -m1 "time:" <<<"$clean" | grep -o "\[.*\]" || true)
+  BENCH_THR=$(grep -m1 "thrpt:" <<<"$clean" | grep -o "\[.*\]" || true)
+  BENCH_LAT=${BENCH_LAT:-"[N/A]"}
+  BENCH_THR=${BENCH_THR:-"[N/A]"}
+}
+
+# Print '|'-separated rows (the first is the header) as a fixed-width table.
+# Args: widths ("10 15 40") header row...
+print_table() {
+  local -a widths cells
+  read -ra widths <<<"$1"
+  shift
+  local fmt="" w row
+  for w in "${widths[@]}"; do fmt+="%-${w}s | "; done
+  fmt="${fmt% | }\n"
+  for row; do
+    IFS='|' read -ra cells <<<"$row"
+    # shellcheck disable=SC2059
+    printf "$fmt" "${cells[@]}"
+  done
+}
+
+# print_table under a title, between '=' rules. Args: title widths header row...
+print_summary() {
+  local title=$1 rule
+  shift
+  rule="${CYAN}$(printf '=%.0s' {1..100})${NC}"
+  echo
+  echo -e "$rule\n${CYAN}${BOLD}  $title${NC}\n$rule"
+  print_table "$@"
+  echo -e "$rule"
+}
+
+# Args: out_dir
+print_done() {
+  local rule="${GREEN}${BOLD}==========================================================================${NC}"
+  echo -e "\n$rule"
+  echo -e "${GREEN}${BOLD}  Test Completed Successfully!${NC}"
+  echo -e "${BOLD}  All logs and reports are in: ${YELLOW}$1${NC}"
+  echo -e "$rule"
+}

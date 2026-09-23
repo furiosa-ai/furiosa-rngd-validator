@@ -1,10 +1,8 @@
 #!/bin/bash
 # P2P bandwidth test phase.
-# Runs `furiosa-hal-bench p2p` between every NPU pair. ACS_MODE selects
-# which ACS configurations to test on all upstream PCI bridges: empty
-# runs twice (once ACS disabled, once ACS re-enabled) so the numbers can be
-# compared, `disable` runs only the ACS-disabled pass, `enable` only the
-# ACS-enabled pass.
+# Runs `furiosa-hal-bench p2p` between every NPU pair, once per ACS state:
+# empty ACS_MODE runs ACS-disabled then ACS-enabled so the two can be compared;
+# `disable` / `enable` runs only that pass.
 
 set -euo pipefail
 
@@ -22,37 +20,11 @@ mkdir -p "$OUTPUT_P2P"
 LOG_FILE="${OUTPUT_P2P}/PF_result.log"
 HTML_FILE="${OUTPUT_P2P}/PF_result.html"
 
-append_html_section() {
-  local label=$1
-  shift
-  local data=("$@")
-
-  cat <<EOF >>"$HTML_FILE"
-    <div class="section">
-        <h2>Test Summary: $label</h2>
-        <table>
-            <tr>
-                <th>Time</th>
-                <th>P2P Path</th>
-                <th>Latency (ms)</th>
-                <th>Throughput (GiB/s)</th>
-            </tr>
-EOF
-  for entry in "${data[@]}"; do
-    IFS='|' read -r r_time r_path r_lat r_thr <<<"$entry"
-    echo "<tr><td>$r_time</td><td>$r_path</td><td class='val-text'>$r_lat</td><td class='val-text'>$r_thr</td></tr>" >>"$HTML_FILE"
-  done
-  echo "</table></div>" >>"$HTML_FILE"
-}
-
 resolve_npus
 
-# P2P needs more than one NPU to test. Skip instead of running an
-# empty loop that would leave SUMMARY_DATA empty for the report.
+# No pair to test. Exit 75 (EX_TEMPFAIL) reports SKIP, not PASS.
 if [[ ${#NPUS[@]} -lt 2 ]]; then
   echo -e "${YELLOW}[p2p] Skipping: P2P Test requires >= 2 NPUs, but ${#NPUS[@]} selected (${NPUS[*]}).${NC}" | tee -a "$LOG_FILE"
-  # Exit 75 (EX_TEMPFAIL) signals SKIP to the report generator -- distinct from
-  # 0 (PASS) so an unrunnable phase isn't reported as a passing one.
   exit 75
 fi
 
@@ -64,67 +36,25 @@ save_lspci_info() {
 }
 
 run_p2p_test() {
-  local label=$1
-  declare -a SUMMARY_DATA=()
+  local label=$1 i j now
+  local -a rows=()
 
   echo -e "${CYAN}${BOLD}\n>>> Starting Test: $label <<<\n${NC}" | tee -a "$LOG_FILE"
 
   for i in "${NPUS[@]}"; do
     for j in "${NPUS[@]}"; do
       [[ "$i" -eq "$j" ]] && continue
-
-      local CURRENT_TIME
-      CURRENT_TIME=$(date +%T)
-
-      local STEP_LOG
-      STEP_LOG=$(mktemp "${OUTPUT_P2P}/step_p2p_XXXX.tmp")
-
-      echo -e "${BOLD}--------------------------------------------------${NC}" | tee -a "$LOG_FILE"
-      echo -e "[$CURRENT_TIME] Testing P2P ($label): ${GREEN}Source $i${NC} -> ${GREEN}Destination $j${NC}" | tee -a "$LOG_FILE"
-      echo -e "${BOLD}--------------------------------------------------${NC}" | tee -a "$LOG_FILE"
-
-      furiosa-hal-bench p2p \
-        --npu "$i" \
-        --dst-npu "$j" \
-        --buffer-size "$P2P_BUFFER_SIZE" \
-        2>&1 | tee "$STEP_LOG"
-
-      cat "$STEP_LOG" >>"$LOG_FILE"
-
-      CLEAN_OUT=$(sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g" "$STEP_LOG")
-
-      LAT=$(echo "$CLEAN_OUT" | grep "time:" | head -n 1 | grep -o "\[.*\]" || true)
-      THR=$(echo "$CLEAN_OUT" | grep "thrpt:" | head -n 1 | grep -o "\[.*\]" || true)
-
-      LAT=${LAT:-"[N/A]"}
-      THR=${THR:-"[N/A]"}
-
-      SUMMARY_DATA+=("$CURRENT_TIME|Src $i->Dst $j|$LAT|$THR")
-
-      rm -f "$STEP_LOG"
-      echo >>"$LOG_FILE"
+      now=$(date +%T)
+      step_header "[$now] Testing P2P ($label): ${GREEN}Source $i${NC} -> ${GREEN}Destination $j${NC}"
+      hal_bench p2p --npu "$i" --dst-npu "$j" --buffer-size "$P2P_BUFFER_SIZE"
+      rows+=("$now|Src $i->Dst $j|$BENCH_LAT|$BENCH_THR")
     done
   done
 
-  {
-    echo
-    echo -e "${CYAN}======================================================================================================================================================${NC}"
-    echo -e "${CYAN}${BOLD}                                            P2P TEST SUMMARY REPORT ($label)${NC}"
-    echo -e "${CYAN}======================================================================================================================================================${NC}"
-    printf "${BOLD}%-10s | %-15s | %-40s | %-40s${NC}\n" \
-      "Time" "P2P Path" "Latency (ms)" "Throughput (GiB/s)"
-    echo -e "${CYAN}------------------------------------------------------------------------------------------------------------------------------------------------------${NC}"
-
-    for entry in "${SUMMARY_DATA[@]}"; do
-      IFS='|' read -r r_time r_path r_lat r_thr <<<"$entry"
-      printf "%-10s | %-15s | ${GREEN}%-40s${NC} | ${GREEN}%-40s${NC}\n" \
-        "$r_time" "$r_path" "$r_lat" "$r_thr"
-    done
-
-    echo -e "${CYAN}======================================================================================================================================================${NC}"
-  } | tee -a "$LOG_FILE"
-
-  append_html_section "$label" "${SUMMARY_DATA[@]}"
+  local header="Time|P2P Path|Latency (ms)|Throughput (GiB/s)"
+  print_summary "P2P TEST SUMMARY REPORT ($label)" "10 15 40 40" "$header" "${rows[@]}" |
+    tee -a "$LOG_FILE"
+  html_table "$HTML_FILE" "Test Summary: $label" "$header" "${rows[@]}"
 }
 
 html_init "$HTML_FILE" "Furiosa P2P Test Report"
@@ -133,27 +63,20 @@ echo -e "${BOLD}All results will be saved in: ${YELLOW}$OUTPUT_P2P${NC}" | tee -
 
 validate_acs_mode 2>&1 | tee -a "$LOG_FILE"
 
-# In the run's output dir, not /tmp: on any run that ends badly this file is the
-# only record of the pre-run per-bridge ACSCtl values, and it has to outlive the
-# container. Created empty up front so a restore in the window before `--mode
-# save` runs finds a file rather than erroring.
+# In the output dir so it outlives the container: after a bad run it is the only
+# record of the pre-run ACSCtl values. Created empty so a restore before
+# `--mode save` finds a file.
 ACS_STATE_FILE="$(acs_state_file "$OUTPUT_P2P")"
 : >"$ACS_STATE_FILE"
-# Set only after an apply sequence completes; `set -e` aborts on failure, so
-# reaching the assignment means the host really is in the requested state.
+# Set once an apply completes (`set -e` aborts on failure).
 ACS_APPLY_OK=0
 
-# INT/TERM only re-exit so an abort funnels through the EXIT handler instead of
-# resuming past the interrupted test into the next ACS step.
-#
-# A single-mode run (ACS_MODE=disable|enable) deliberately LEAVES ACS as set, so
-# it skips restore -- but only if the sequence succeeded AND the phase ended
-# clean. Any abort restores, like every other phase.
+# EXIT handler; INT/TERM only re-exit into it. A single-mode run that ended
+# clean leaves ACS as set; everything else restores.
 cleanup() {
   # First statement: $? is still the status that triggered the trap.
   local rc=$?
-  # Ignore repeat INT/TERM so restore is atomic; the acs.sh child inherits
-  # SIG_IGN and cannot be killed mid-restore.
+  # Repeat INT/TERM must not cut the restore short (acs.sh inherits SIG_IGN).
   trap '' INT TERM
   if [[ "$rc" -eq 0 && "$ACS_APPLY_OK" -eq 1 ]] &&
     [[ "${ACS_MODE:-}" == "disable" || "${ACS_MODE:-}" == "enable" ]]; then
@@ -174,20 +97,13 @@ cleanup() {
   echo -e "${YELLOW}[cleanup] Pre-run ACS state kept at $(repo_rel "$ACS_STATE_FILE") -- from the repo root, re-apply manually with:${NC}" | tee -a "$LOG_FILE" || true
   echo -e "${YELLOW}[cleanup]   $(acs_rollback_cmd "$ACS_STATE_FILE")${NC}" | tee -a "$LOG_FILE" || true
 
-  # Here, not on the happy path: an abort is exactly when dmesg is wanted.
   capture_dmesg "$OUTPUT_P2P" || true
 
-  # Else the report is a P2P heading with no table and no stated reason.
   if [[ "$rc" -ne 0 ]]; then
-    cat <<EOF >>"$HTML_FILE"
-    <div class="section">
-        <p><strong>Phase aborted (exit $rc).</strong> Any tables above are incomplete; see <code>PF_result.log</code> for the failure.</p>
-    </div>
-EOF
+    html_note "$HTML_FILE" "<strong>Phase aborted (exit $rc).</strong> Any tables above are incomplete; see <code>PF_result.log</code> for the failure."
   fi
 
-  # Explicit: rc may have been raised above, and the shell would otherwise exit
-  # with the status that triggered the trap.
+  # rc may have been raised above.
   exit "$rc"
 }
 trap cleanup EXIT
@@ -196,19 +112,15 @@ trap 'exit 143' TERM
 
 save_lspci_info "initial"
 
-# Up front, so the EXIT trap can restore no matter which sequences below ran.
 bash "$ACS_SH" --mode save "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
 
-# Empty ACS_MODE benchmarks both configurations, disable first so the pair can be
-# compared in one report; a single mode benchmarks only that one.
 ACS_SEQUENCES=(disable enable)
 [[ -z "$ACS_MODE" ]] || ACS_SEQUENCES=("$ACS_MODE")
 
 STEP=1
 for mode in "${ACS_SEQUENCES[@]}"; do
   echo -e "\n${BOLD}[STEP $STEP] ACS ${mode^} Sequence${NC}" | tee -a "$LOG_FILE"
-  # Shared with the other phases: rolls back a part-way apply itself, then the
-  # non-zero return trips `set -e` into the cleanup trap.
+  # A part-way failure rolls itself back, then `set -e` trips cleanup.
   acs_apply "$mode" "$ACS_STATE_FILE" 2>&1 | tee -a "$LOG_FILE"
   ACS_APPLY_OK=1
   save_lspci_info "ACS_$mode"
@@ -217,13 +129,5 @@ for mode in "${ACS_SEQUENCES[@]}"; do
   STEP=$((STEP + 1))
 done
 
-cat <<EOF >>"$HTML_FILE"
-    <div class="section">
-        <p>If you have any questions about the throughput results, please contact Furiosa for support.</p>
-    </div>
-EOF
-
-echo -e "\n${GREEN}${BOLD}==========================================================================${NC}"
-echo -e "${GREEN}${BOLD}  Test Completed Successfully!${NC}"
-echo -e "${BOLD}  All logs and reports are in: ${YELLOW}$OUTPUT_P2P${NC}"
-echo -e "${GREEN}${BOLD}==========================================================================${NC}"
+html_note "$HTML_FILE" "If you have any questions about the throughput results, please contact Furiosa for support."
+print_done "$OUTPUT_P2P"

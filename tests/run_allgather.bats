@@ -29,7 +29,7 @@ resolve_npus() { declare -ga NPUS=(0 1 2 3); }
 capture_dmesg() { :; }
 EOF
 
-  printf '#!/bin/bash\nhtml_init() { : >"$1"; }\n' >"$TESTROOT/lib/html.sh"
+  printf '#!/bin/bash\nsource "%s"\n' "${BATS_TEST_DIRNAME}/../scripts/lib/html.sh" >"$TESTROOT/lib/html.sh"
 
   cat >"$TESTROOT/config.env" <<EOF
 #!/bin/bash

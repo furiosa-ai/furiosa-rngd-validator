@@ -38,10 +38,7 @@ resolve_npus() { declare -ga NPUS=(0 1); }
 capture_dmesg() { : >"\${1}/dmesg_captured"; }
 EOF
 
-  cat >"$TESTROOT/lib/html.sh" <<'EOF'
-#!/bin/bash
-html_init() { : >"$1"; }
-EOF
+  printf '#!/bin/bash\nsource "%s"\n' "${BATS_TEST_DIRNAME}/../scripts/lib/html.sh" >"$TESTROOT/lib/html.sh"
 
   # config.env stub: honor ACS_MODE from the environment so each test can vary it.
   cat >"$TESTROOT/config.env" <<'EOF'
