@@ -49,17 +49,36 @@ declare -a SUMMARY_DATA=()
 
 resolve_npus
 
+# Parse and validate every SERVE_MODELS entry (name:org[:tp]) up front, before
+# any download or serve: a malformed entry would otherwise surface as a bogus
+# `hf download furiosa-ai/`, an invalid --served-model-name, or a division by
+# zero in npu_groups.
+declare -a MODEL_NAMES=() MODEL_ORGS=() MODEL_TPS=()
 IFS=',' read -ra MODELS <<<"$SERVE_MODELS"
+for model_entry in "${MODELS[@]}"; do
+  IFS=':' read -r model_name model_org tp <<<"${model_entry//[[:space:]]/}"
+  tp=${tp:-1}
+  if [[ -z "$model_name" || -z "$model_org" ]] || ! [[ $tp =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}[serve] Invalid SERVE_MODELS entry '$model_entry' (SERVE_MODELS='$SERVE_MODELS'); expected name:org[:tp] with tp a positive integer.${NC}" >&2
+    exit 1
+  fi
+  MODEL_NAMES+=("$model_name")
+  MODEL_ORGS+=("$model_org")
+  MODEL_TPS+=("$tp")
+done
+((${#MODEL_NAMES[@]} > 0)) || {
+  echo -e "${RED}[serve] SERVE_MODELS is empty.${NC}" >&2
+  exit 1
+}
 
 # Pre-fetch weights into the (mounted) HF cache up front. `hf download` is
 # cache-aware -- it verifies each file and fetches only what is missing, so a
 # warm cache is a no-op; a cold cache fails fast here instead of mid-serve.
 # Skip models whose tp exceeds the NPU count -- the serve loop skips them too.
-for model_entry in "${MODELS[@]}"; do
-  IFS=':' read -r model_name _ tp <<<"$model_entry"
-  ((${tp:-1} > ${#NPUS[@]})) && continue
-  echo -e "${CYAN}Pre-fetching furiosa-ai/$model_name (revision $SERVE_REVISION)...${NC}"
-  hf download "furiosa-ai/$model_name" --revision "$SERVE_REVISION"
+for mi in "${!MODEL_NAMES[@]}"; do
+  ((MODEL_TPS[mi] > ${#NPUS[@]})) && continue
+  echo -e "${CYAN}Pre-fetching furiosa-ai/${MODEL_NAMES[mi]} (revision $SERVE_REVISION)...${NC}"
+  hf download "furiosa-ai/${MODEL_NAMES[mi]}" --revision "$SERVE_REVISION"
 done
 
 get_model_id() {
@@ -275,9 +294,13 @@ python3 "$SCRIPTS_ROOT/lib/sensor_monitor.py" --output "$OUTPUT_SERVE" --timesta
 MONITOR_PID=$!
 echo -e "${CYAN}NPU Sensor Monitoring started (PID: $MONITOR_PID)${NC}"
 
-for model_entry in "${MODELS[@]}"; do
-  IFS=':' read -r model_name model_org tp <<<"$model_entry"
-  tp=${tp:-1}
+# Set once any model actually runs; an all-SKIP phase must not report PASS.
+RAN_ANY=0
+
+for mi in "${!MODEL_NAMES[@]}"; do
+  model_name=${MODEL_NAMES[mi]}
+  model_org=${MODEL_ORGS[mi]}
+  tp=${MODEL_TPS[mi]}
   model="$model_name $model_org"
   echo "=========================================="
   echo "Processing model: $model (tp=$tp)"
@@ -291,6 +314,7 @@ for model_entry in "${MODELS[@]}"; do
     continue
   fi
 
+  RAN_ANY=1
   build_tp_groups "$tp"
   build_batches
 
@@ -406,6 +430,8 @@ done
 
   if [[ $FAILED -eq 1 ]]; then
     echo -e "${RED}${BOLD}Some tests FAILED${NC}"
+  elif [[ $RAN_ANY -eq 0 ]]; then
+    echo -e "${YELLOW}${BOLD}All tests SKIPPED${NC}"
   else
     echo -e "${GREEN}${BOLD}All tests PASSED${NC}"
   fi
@@ -441,6 +467,8 @@ echo "    <p><strong>Total Duration:</strong> $TOTAL_DURATION</p>" >>"$HTML_REPO
   echo '    <div class="footer">'
   if [[ $FAILED -eq 1 ]]; then
     echo "        <span class='fail'>RESULT: Some tests FAILED</span>"
+  elif [[ $RAN_ANY -eq 0 ]]; then
+    echo "        <span class='skip'>RESULT: All tests SKIPPED</span>"
   else
     echo "        <span class='pass'>RESULT: All tests PASSED</span>"
   fi
@@ -449,4 +477,10 @@ echo "    <p><strong>Total Duration:</strong> $TOTAL_DURATION</p>" >>"$HTML_REPO
 
 echo -e "HTML report saved to: ${YELLOW}$HTML_REPORT${NC}"
 
+# Exit 75 (EX_TEMPFAIL) signals SKIP to the report generator, as in the p2p and
+# allgather phases: every model needed more NPUs than were selected, so nothing
+# ran and the phase must not be summarized as "pass".
+if [[ $FAILED -eq 0 && $RAN_ANY -eq 0 ]]; then
+  exit 75
+fi
 exit "$FAILED"

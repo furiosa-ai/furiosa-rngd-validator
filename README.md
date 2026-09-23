@@ -188,7 +188,7 @@ First the phase pre-fetches every `SERVE_MODELS` entry via `hf download` into th
 
 A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` for the full duration.
 
-**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU. **Skip:** a model whose tensor-parallel size exceeds the selected NPU count is skipped.
+**Pass:** the random and ShareGPT benchmarks both complete cleanly on every NPU. A model whose tensor-parallel size exceeds the selected NPU count is skipped (reported `SKIP` in the table). **Skip:** every `SERVE_MODELS` entry was skipped this way — the phase exits 75 and is reported `SKIP`, since nothing ran. A malformed `SERVE_MODELS` entry (missing name/org, or `tp` not a positive integer) fails the phase before any download.
 
 ## Configuration
 

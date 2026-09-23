@@ -38,6 +38,10 @@ case "$STRESS_SCENARIO" in
     exit 1
     ;;
 esac
+[[ $STRESS_DURATION =~ ^[1-9][0-9]*$ ]] || {
+  echo -e "${YELLOW}[stress] Invalid STRESS_DURATION='$STRESS_DURATION'; expected a positive integer number of seconds.${NC}"
+  exit 1
+}
 
 resolve_npus
 
@@ -56,10 +60,15 @@ cleanup() {
   trap '' INT TERM
   if [[ ${#stress_pids[@]} -gt 0 ]]; then
     echo -e "\n${CYAN}[cleanup] Stopping stress-test processes...${NC}" >&2 || true
+    # Only the PIDs this phase launched -- a broad `pkill -f` could hit an
+    # unrelated furiosa-stress-test on the host. Wait so the NPUs are released
+    # before the phase exits.
     for pid in "${stress_pids[@]}"; do
-      [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null || true
+      kill "$pid" 2>/dev/null || true
     done
-    pkill -f furiosa-stress-test 2>/dev/null || true
+    for pid in "${stress_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
   fi
   if [[ -n "${MONITOR_PID:-}" ]] && kill -0 "$MONITOR_PID" 2>/dev/null; then
     echo -e "${CYAN}[cleanup] Stopping sensor monitor (PID: $MONITOR_PID)${NC}" >&2 || true
