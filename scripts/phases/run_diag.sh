@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hardware diagnostic phase.
-# Runs the `rngd-diag` vendor binary to collect sensor, PCIe, AER, and
+# Runs `rngd-diag` (from furiosa-toolkit-rngd) to collect sensor, PCIe, AER, and
 # power-sense data for every NPU into diag.yaml, then feeds the YAML to
 # the rngd_diag_decoder package to produce a PASS/FAIL report.
 
@@ -26,19 +26,11 @@ LOG_FILE="${OUTPUT_DIAG}/result_diag.log"
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-ARCH="$(uname -m)"
-case "$ARCH" in
-  aarch64) DIAG_BIN="$VALIDATOR_DIR/scripts/bin/rngd-diag-arm64" ;;
-  x86_64) DIAG_BIN="$VALIDATOR_DIR/scripts/bin/rngd-diag-amd64" ;;
-  *)
-    echo "ERROR: Unsupported architecture: $ARCH"
-    exit 1
-    ;;
-esac
+RNGD_DIAG="${RNGD_DIAG:-rngd-diag}"
 TOOLS_DIR="$VALIDATOR_DIR/scripts/tools"
 
-[[ -x "$DIAG_BIN" ]] || {
-  echo "ERROR: $(basename "$DIAG_BIN") not found or not executable"
+command -v "$RNGD_DIAG" >/dev/null || {
+  echo "ERROR: $RNGD_DIAG not found in PATH (install furiosa-toolkit-rngd)"
   exit 1
 }
 [[ -d "$TOOLS_DIR/rngd_diag_decoder" ]] || {
@@ -61,8 +53,8 @@ if [[ -n "${VALIDATE_NPUS:-}" ]]; then
   echo "Using specified NPUs: $VALIDATE_NPUS"
 fi
 
-echo "[1/2] Running $(basename "$DIAG_BIN") ($ARCH)..."
-"$DIAG_BIN" "${DIAG_NPU_ARGS[@]}" -o "$YAML_NAME"
+echo "[1/2] Running $RNGD_DIAG..."
+"$RNGD_DIAG" "${DIAG_NPU_ARGS[@]}" -o "$YAML_NAME"
 
 echo "[2/2] Decoding result..."
 PYTHONPATH="$TOOLS_DIR" python3 -m rngd_diag_decoder --yaml-file "$YAML_NAME" --output-dir "$OUTPUT_DIAG"
