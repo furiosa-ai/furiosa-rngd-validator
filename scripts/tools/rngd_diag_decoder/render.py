@@ -11,6 +11,16 @@ RESET = "\033[0m"
 BOLD  = "\033[1m"
 
 
+def passed(detail: str = "") -> str:
+    """Green PASS, followed by `detail` in parentheses when given."""
+    return f"{GREEN}PASS{RESET}" + (f" ({detail})" if detail else "")
+
+
+def failed(detail: str) -> str:
+    """Red FAIL followed by `detail` in parentheses."""
+    return f"{RED}FAIL{RESET} ({detail})"
+
+
 def strip_ansi(text: str) -> str:
     """Remove ANSI color escape sequences from `text`."""
     return text.replace(GREEN, "").replace(RED, "").replace(RESET, "").replace(BOLD, "")

@@ -45,16 +45,14 @@ def check_npu_status(
         and not (thresholds.SENSOR_LIMITS[k][0] <= v <= thresholds.SENSOR_LIMITS[k][1])
     ]
     results['SENSORS'] = (
-        f"{render.GREEN}PASS{render.RESET} ({', '.join(sensor_vals)})"
-        if not s_errors else
-        f"{render.RED}FAIL{render.RESET} ({', '.join(s_errors)})"
+        render.passed(', '.join(sensor_vals)) if not s_errors
+        else render.failed(', '.join(s_errors))
     )
 
     p_val = diag_data.get('power_sense', {}).get('value')
     results['PWR_SENSE'] = (
-        f"{render.GREEN}PASS{render.RESET}"
-        if p_val in thresholds.POWER_SENSE_VALID_VALUES
-        else f"{render.RED}FAIL{render.RESET} (Val:{p_val})"
+        render.passed() if p_val in thresholds.POWER_SENSE_VALID_VALUES
+        else render.failed(f"Val:{p_val}")
     )
 
     pcie = diag_data.get('pcie', {})
@@ -63,31 +61,30 @@ def check_npu_status(
     width = link.get('width', 'N/A')
     aer   = pcie.get('aer', {}).get('total_err_fatal', 0)
     results['PCIE'] = (
-        f"{render.GREEN}PASS{render.RESET} ({speed}, {width})"
+        render.passed(f"{speed}, {width}")
         if (
             speed == thresholds.PCIE_EXPECTED_SPEED
             and width == thresholds.PCIE_EXPECTED_WIDTH
             and aer == thresholds.PCIE_EXPECTED_AER_FATAL
         )
-        else f"{render.RED}FAIL{render.RESET} (AER:{aer})"
+        else render.failed(f"AER:{aer}")
     )
 
     for mode in ['read', 'write']:
         m_data = bench_data.get(mode, {}).get(npu_id, {})
         label = f"hal-bench ({mode.upper()})"
         if 'error' in m_data:
-            results[label] = f"{render.RED}FAIL{render.RESET} (Busy/Error)"
+            results[label] = render.failed("Busy/Error")
         elif 'thrpt_gibs' in m_data:
             avgs = [str(round(sum(g)/len(g), 2)) for g in m_data['thrpt_gibs'] if g]
-            results[label] = f"{render.GREEN}PASS{render.RESET} ({', '.join(avgs)})"
+            results[label] = render.passed(', '.join(avgs))
         else:
             results[label] = "NO_DATA"
 
     st = stress_data.get(npu_id, {})
     results['STRESS_TEST'] = (
-        f"{render.GREEN}PASS{render.RESET} (QPS:{st.get('qps')})"
-        if st.get('exit_code') == 0 else
-        f"{render.RED}FAIL{render.RESET} (Exit:{st.get('exit_code')})"
+        render.passed(f"QPS:{st.get('qps')}") if st.get('exit_code') == 0
+        else render.failed(f"Exit:{st.get('exit_code')}")
     )
 
     return results
