@@ -1,7 +1,5 @@
 FROM ubuntu:24.04
 
-ARG TARGETARCH
-
 # ======================================================================
 # Package version policy
 # ======================================================================
@@ -87,12 +85,5 @@ RUN python3 -m venv "$FURIOSA_VENV" \
 # ======================================================================
 COPY entrypoint.sh $VALIDATOR_DIR/entrypoint.sh
 COPY scripts $VALIDATOR_DIR/scripts/
-
-# Keep only the arch-appropriate rngd-diag binary to reduce image size.
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        rm -f "$VALIDATOR_DIR/scripts/bin/rngd-diag-amd64"; \
-    elif [ "$TARGETARCH" = "amd64" ]; then \
-        rm -f "$VALIDATOR_DIR/scripts/bin/rngd-diag-arm64"; \
-    fi
 
 ENTRYPOINT ["/root/furiosa-rngd-validator/entrypoint.sh"]

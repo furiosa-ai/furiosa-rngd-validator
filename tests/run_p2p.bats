@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Control-flow tests for the P2P_ACS_MODE branching in scripts/phases/run_p2p.sh.
+# Control-flow tests for the ACS_MODE branching in scripts/phases/run_p2p.sh.
 # The real acs.sh / furiosa-hal-bench / lspci touch PCI registers and hardware,
 # so we run run_p2p.sh inside a throwaway SCRIPTS_ROOT whose lib/ and config.env
 # are stubs. The acs.sh stub just appends its args to $ACS_LOG, letting each test
@@ -23,14 +23,19 @@ echo "$*" >>"$ACS_LOG"
 exit 0
 EOF
 
-  # common.sh stub: colors + the two helpers run_p2p.sh calls. resolve_npus must
-  # yield >= 2 NPUs so the phase doesn't early-exit (75) before the ACS branching.
-  cat >"$TESTROOT/lib/common.sh" <<'EOF'
+  # common.sh stub: the REAL helpers, since run_p2p.sh shares validate_acs_mode /
+  # acs_apply / acs_state_file with the other phases, with $ACS_SH pointed at the
+  # stub walker above. Only the hardware-touching helpers are replaced:
+  # resolve_npus must yield >= 2 NPUs so the phase doesn't early-exit (75) before
+  # the ACS branching, and capture_dmesg writes a marker instead of no-op'ing so
+  # tests can assert dmesg was captured.
+  cat >"$TESTROOT/lib/common.sh" <<EOF
 #!/bin/bash
+source "${BATS_TEST_DIRNAME}/../scripts/lib/common.sh"
+ACS_SH="$TESTROOT/lib/acs.sh"
 RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' NC=''
 resolve_npus() { declare -ga NPUS=(0 1); }
-# Writes a marker instead of no-op'ing, so tests can assert dmesg was captured.
-capture_dmesg() { : >"${1}/dmesg_captured"; }
+capture_dmesg() { : >"\${1}/dmesg_captured"; }
 EOF
 
   cat >"$TESTROOT/lib/html.sh" <<'EOF'
@@ -38,11 +43,11 @@ EOF
 html_init() { : >"$1"; }
 EOF
 
-  # config.env stub: honor P2P_ACS_MODE from the environment so each test can vary it.
+  # config.env stub: honor ACS_MODE from the environment so each test can vary it.
   cat >"$TESTROOT/config.env" <<'EOF'
 #!/bin/bash
 P2P_BUFFER_SIZE="${P2P_BUFFER_SIZE:-16MiB}"
-P2P_ACS_MODE="${P2P_ACS_MODE:-}"
+ACS_MODE="${ACS_MODE:-}"
 EOF
 
   # Fake external binaries: benchmark + lspci both no-op with exit 0 (pipefail).
@@ -59,7 +64,7 @@ teardown() {
 }
 
 run_phase() {
-  P2P_ACS_MODE="$1" OUTPUT_P2P="$OUT" run bash "$TESTROOT/phases/run_p2p.sh"
+  ACS_MODE="$1" OUTPUT_P2P="$OUT" run bash "$TESTROOT/phases/run_p2p.sh"
 }
 
 # Re-stub acs.sh so the invocation matching $1 fails, as an unwritable bridge would.
@@ -131,17 +136,32 @@ EOF
   [[ -f "$OUT/lspci-topology_restore_failed.log" ]]
 }
 
-# The gap this closes: a single-mode run whose ACS apply succeeded and whose test
-# then failed. The gate correctly skips restore -- ACS was left as asked -- but the
-# run still failed, so the pre-run values must survive for a manual rollback.
-@test "single mode keeps the ACS state file when the test fails after applying" {
+# A single mode is kept only by a run that ended clean. One whose test failed
+# after the apply must roll back rather than leave the bridges switched, and must
+# still keep the snapshot.
+@test "single mode restores when the test fails after applying" {
   printf '#!/bin/bash\nexit 1\n' >"$FAKE_BIN/furiosa-hal-bench"
   run_phase "disable"
   [[ "$status" -ne 0 ]]
-  # Apply succeeded, so this really is the no-restore path.
-  [[ "$output" == *"leaving ACS as set (no restore)"* ]]
-  ! grep -q -- "--mode restore" "$ACS_LOG"
+  [[ "$output" != *"leaving ACS as set (no restore)"* ]]
+  grep -q -- "--mode restore" "$ACS_LOG"
   [[ "$output" == *"Pre-run ACS state kept at"* ]]
+}
+
+# Ctrl-C mid-apply leaves the host half-switched; the EXIT trap is armed before
+# anything touches ACS, so it restores. setsid puts the phase in its own process
+# group, letting the stub signal it the way a terminal Ctrl-C would.
+@test "interrupt during an ACS sequence restores ACS" {
+  cat >"$TESTROOT/lib/acs.sh" <<'EOF'
+#!/bin/bash
+echo "$*" >>"$ACS_LOG"
+[[ "$2" == "disable" ]] && { kill -INT 0; exit 130; }
+exit 0
+EOF
+  ACS_MODE=disable OUTPUT_P2P="$OUT" run setsid bash "$TESTROOT/phases/run_p2p.sh"
+  [[ "$status" -ne 0 ]]
+  grep -q -- "--mode restore" "$ACS_LOG"
+  [[ "$output" != *"leaving ACS as set (no restore)"* ]]
 }
 
 # Invalid mode is rejected before any ACS sequence runs (and thus can never hit

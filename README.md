@@ -161,7 +161,7 @@ Runs `rngd-diag` to capture per-NPU sensor readings, PCIe link state, AER counte
 
 Runs `furiosa-hal-bench p2p` between every NPU pair **twice**: once after disabling ACS on all upstream PCI bridges, once after re-enabling it. On exit the host's original ACS state is restored. The two passes are reported side-by-side so the effect of ACS can be compared. There is no built-in throughput or latency threshold; operators apply their own target spec for the host platform.
 
-Set `P2P_ACS_MODE=disable` (or `enable`) to run only that one sequence. A single-mode run does **not** restore ACS afterward — it leaves ACS in the requested state, so `P2P_ACS_MODE=disable` leaves ACS disabled on exit. Only the default both-passes run restores the pre-run state.
+Set `ACS_MODE=disable` (or `enable`) to run only that one sequence. A single mode is host-wide, not p2p-only: every selected phase (`diag`, `allgather`, `stress`, `serve` included) applies it to all bridges at its own start, so the whole run is measured in that one ACS state — re-applied per phase because an aborted `p2p` restores the pre-run state on the way out. Each of those phases first saves the pre-run per-bridge `ACSCtl` values to `<run_dir>/<phase>/acs_init_state`, and rolls back from it if the apply fails part-way (a half-applied host is in neither the requested nor the original state). A single-mode run that ends clean does **not** restore ACS afterward — it leaves ACS in the requested state, so `ACS_MODE=disable` leaves ACS disabled on exit. A phase that aborts (failure or Ctrl-C, whether during the ACS switch or during the benchmark) always rolls back to the pre-run state, as does the default both-passes run.
 
 **Pass:** `furiosa-hal-bench` completes without error in both passes. **Skip:** fewer than 2 NPUs are selected — the phase exits 75 and is reported `SKIP` (no pair to benchmark).
 
@@ -195,9 +195,9 @@ A background sensor monitor samples SoC, HBM, and power into `sensor_log_*.csv` 
 Every knob below defaults in `scripts/config.env`. Override any of three equivalent ways — all reach the container, since `make run` forwards every variable in this table via `-e`:
 
 ```bash
-make run P2P_ACS_MODE=disable STRESS_DURATION=30   # on the make command line
-P2P_ACS_MODE=disable make run                      # exported before make
-docker run … -e P2P_ACS_MODE=disable …             # -e directly, if bypassing make
+make run ACS_MODE=disable STRESS_DURATION=30       # on the make command line
+ACS_MODE=disable make run                          # exported before make
+docker run … -e ACS_MODE=disable …                 # -e directly, if bypassing make
 ```
 
 An empty value falls back to the default (`config.env` uses `${VAR:-default}`), so forwarding an unset variable is a no-op.
@@ -206,7 +206,7 @@ An empty value falls back to the default (`config.env` uses `${VAR:-default}`), 
 |---|---|---|
 | `RUN_TESTS` | `diag,p2p,allgather,stress,serve` | Comma-separated phase list |
 | `VALIDATE_NPUS` | — (all detected) | Comma-separated NPU indices to test (e.g. `0,2`); honoured by every phase |
-| `P2P_ACS_MODE` | — (runs both) | Restrict the `p2p` phase to one ACS sequence: `disable` or `enable`. Empty runs both (disable then enable) and restores ACS on exit; a single mode leaves ACS in that state (no restore) |
+| `ACS_MODE` | — (runs both) | Host-wide ACS state for the run: `disable` or `enable`. Empty makes `p2p` benchmark both (disable then enable) and restore ACS on exit, other phases running at the host's own setting; a single mode is applied at the start of every selected phase and left as set by a clean run (an aborted phase rolls back) |
 | `P2P_BUFFER_SIZE` | `16MiB` | `furiosa-hal-bench p2p` transfer buffer size |
 | `ALLGATHER_GROUP_SIZES` | `4` | Comma-separated NPU group sizes benchmarked by the `allgather` phase; a size larger than the selected NPU count is skipped |
 | `ALLGATHER_BUFFER_SIZE` | `1MiB` | `furiosa-hal-bench allgather` transfer buffer size |
@@ -236,7 +236,7 @@ Five common failure modes.
 
 **`p2p` fails with "ACS restore FAILED"** — a bridge rejected the write that would return it to its pre-run `ACSCtl` value, so it is still at the benchmark's value and has lost the isolation the firmware configured. The phase fails even if the benchmark itself passed. `PF_result.log` ends with the exact retry command — re-apply the ACS configuration manually before using this host.
 
-**`<run_dir>/p2p/acs_init_state` left behind** — not a failure mode in itself, but the marker of one: the file holds the per-bridge `ACSCtl` values from before the run and is removed only when the phase passes. Any run that failed or was interrupted keeps it, including a `P2P_ACS_MODE=disable`/`enable` run that set ACS as asked and then failed in the test — that path deliberately skips the restore, so this file is the only way back. Roll back with `sudo bash scripts/lib/acs.sh --mode restore <run_dir>/p2p/acs_init_state`.
+**`<run_dir>/p2p/acs_init_state` left behind** — not a failure mode in itself, but the marker of one: the file holds the per-bridge `ACSCtl` values from before the run and is removed only when the phase passes. Any run that failed or was interrupted keeps it: such a run rolls ACS back automatically, and the file is what a rollback that itself failed needs. Roll back with `sudo bash scripts/lib/acs.sh --mode restore <run_dir>/p2p/acs_init_state`. Under a single `ACS_MODE` the other phases write the same file under their own directory (`<run_dir>/diag/acs_init_state`, …) and always keep it, for the same reason — any one of them will do for a rollback.
 
 **First serve run downloads model weights, `vllm`, and `ShareGPT_V3_unfiltered_cleaned_split.json`.** Before serving, the phase pre-fetches each `SERVE_MODELS` entry via `hf download` into the mounted HF cache (`HF_CACHE_DIR`, default `$HOME/.cache/huggingface`); `hf download` is cache-aware, so a warm cache is a no-op. `vllm` and the ShareGPT dataset land in `scripts/`. Non-Docker runs reuse all of these on subsequent runs, and Docker runs reuse the model weights via the mounted cache; but `vllm`/ShareGPT are re-fetched each Docker run (`--rm`), so for repeated or air-gapped Docker use, bake those artifacts into the image.
 
