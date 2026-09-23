@@ -24,8 +24,8 @@ mkdir -p "$OUTPUT_DIAG"
 YAML_NAME="${OUTPUT_DIAG}/diag.yaml"
 LOG_FILE="${OUTPUT_DIAG}/result_diag.log"
 
-# tee ignores INT/TERM so it outlives a Ctrl-C: it is this script's only stdout,
-# and writing to a dead one kills the shell with SIGPIPE mid-cleanup.
+# tee ignores INT/TERM: a Ctrl-C must not kill the shell's only stdout (and the
+# shell with SIGPIPE) mid-cleanup.
 exec > >(
   trap '' INT TERM
   tee -a "$LOG_FILE"
@@ -53,7 +53,7 @@ echo "------------------------------------------"
 
 DIAG_NPU_ARGS=()
 if [[ -n "${VALIDATE_NPUS:-}" ]]; then
-  # Already normalized/validated at config load by normalize_validate_npus.
+  # Already normalized at config load.
   DIAG_NPU_ARGS=(--npu "$VALIDATE_NPUS")
   echo "Using specified NPUs: $VALIDATE_NPUS"
 fi

@@ -6,8 +6,7 @@ NC='\033[0m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 
-# SC2034 (variable appears unused) -- these colors are consumed only by sourcing
-# scripts; shellcheck cannot follow that direction.
+# Used only by sourcing scripts (SC2034).
 # shellcheck disable=SC2034
 GREEN='\033[0;32m'
 # shellcheck disable=SC2034
@@ -25,9 +24,7 @@ ACS_SH="${ACS_SH:-$(dirname "${BASH_SOURCE[0]}")/acs.sh}"
 # Path of the pre-run ACS snapshot. Args: out_dir
 acs_state_file() { echo "$1/acs_init_state"; }
 
-# Strip $VALIDATOR_DIR, so operator-facing paths are repo-relative: in the
-# container the absolute ones are container-internal, and only outputs/ is
-# mounted back to the host. Args: path
+# Repo-relative path: absolute ones are container-internal. Args: path
 repo_rel() {
   local root="${VALIDATOR_DIR:-}"
   [[ -n "$root" && "$1" == "$root/"* ]] && echo "${1#"$root"/}" || echo "$1"
@@ -38,8 +35,7 @@ acs_rollback_cmd() {
   echo "sudo bash $(repo_rel "$ACS_SH") --mode restore $(repo_rel "$1")"
 }
 
-# Reject a typo'd ACS_MODE before any bridge is written. Empty is valid (both
-# passes). Exits 1.
+# Reject a typo'd ACS_MODE before any bridge is written. Exits 1.
 validate_acs_mode() {
   case "${ACS_MODE:-}" in
     "" | disable | enable) ;;
@@ -62,10 +58,9 @@ acs_apply() {
   return 1
 }
 
-# Roll back to the pre-run state. Repeat INT/TERM are ignored so the acs.sh child
-# cannot be killed mid-restore, PIPE because a phase whose log reader died with
-# the same Ctrl-C must not take the restore down with it (children inherit the
-# SIG_IGN). Args: state_file
+# Roll back to the pre-run state. INT/TERM/PIPE are ignored (and inherited by
+# acs.sh) so neither a repeat Ctrl-C nor a dead log reader can cut the restore
+# short. Args: state_file
 acs_restore() {
   trap '' INT TERM PIPE
   bash "$ACS_SH" --mode restore "$1" ||
@@ -79,10 +74,8 @@ acs_restore_and_exit() {
   exit "$2"
 }
 
-# EXIT handler for a phase that switched ACS: a run that ends badly must not
-# leave the host switched, while a clean one keeps it so the phases after this
-# one measure under the same mode. A SKIP (exit 75) ran nothing and counts as
-# clean. Exits with rc, so it is the last thing a phase's own cleanup does.
+# EXIT handler once ACS is switched: roll back unless the phase ended clean or
+# SKIPped (75), so later phases keep the mode. Exits with rc -- call it last.
 # Args: state_file [exit_code, default $?]
 acs_restore_if_aborted() {
   local rc=${2:-$?}
@@ -94,35 +87,30 @@ acs_restore_if_aborted() {
   exit "$rc"
 }
 
-# Per-phase entry point: save the pre-run ACSCtl values, then apply ACS_MODE.
-# Empty ACS_MODE is a no-op (run_p2p.sh walks both modes itself). A completed
-# apply is left as set, so the snapshot is the only way back. Args: out_dir
+# Per-phase entry point: snapshot ACSCtl, then apply ACS_MODE (no-op when
+# empty; run_p2p.sh walks both modes itself). Args: out_dir
 apply_acs_mode() {
   validate_acs_mode
   [[ -n "${ACS_MODE:-}" ]] || return 0
 
-  # The traps below belong to whatever shell runs this; in a subshell (a pipeline
-  # stage, say) they would die with it and leave the phase unprotected.
+  # Traps set in a subshell (e.g. a pipeline stage) die with it.
   ((BASH_SUBSHELL == 0)) ||
     log_warn "apply_acs_mode ran in a subshell -- ACS will NOT roll back if this phase aborts"
 
-  # Global, so a phase with an EXIT trap of its own (which replaces the one armed
-  # below) can still reach the snapshot from its cleanup.
+  # Global: a phase whose own EXIT trap replaces ours needs it in cleanup.
   ACS_STATE_FILE="$(acs_state_file "${1:?apply_acs_mode requires an output dir}")"
   local state_file="$ACS_STATE_FILE"
 
   bash "$ACS_SH" --mode save "$state_file"
-  # Armed only around the apply: an abort mid-walk leaves the host half-switched
-  # and the phase's own trap is not armed yet. Expanded now on purpose --
-  # $state_file is a local, gone by the time the handler runs.
+  # An abort mid-walk leaves the host half-switched. Expanded now: $state_file
+  # is a local, gone by the time a handler runs.
   # shellcheck disable=SC2064
   trap "acs_restore_and_exit '$state_file' 130" INT
   # shellcheck disable=SC2064
   trap "acs_restore_and_exit '$state_file' 143" TERM
   acs_apply "$ACS_MODE" "$state_file" || exit 1
 
-  # From here the host is switched, so anything that ends the phase badly has to
-  # roll it back. INT/TERM re-exit so they funnel through the EXIT handler.
+  # Switched: any bad exit rolls back. INT/TERM funnel through EXIT.
   # shellcheck disable=SC2064
   trap "acs_restore_if_aborted '$state_file'" EXIT
   trap 'exit 130' INT
@@ -165,9 +153,8 @@ normalize_validate_npus() {
   VALIDATE_NPUS=$normalized
 }
 
-# Detect NPUs and resolve the set to use, honoring VALIDATE_NPUS.
-# Sets globals: NPU_COUNT (total detected) and NPUS (array of indices to use).
-# Exits 1 if no NPUs found or VALIDATE_NPUS is invalid/out of range.
+# Set NPU_COUNT (detected) and NPUS (indices to use, honoring VALIDATE_NPUS).
+# Exits 1 if no NPUs are found or VALIDATE_NPUS is invalid.
 resolve_npus() {
   NPU_COUNT=$(detect_npu_count)
   [[ "$NPU_COUNT" -eq 0 ]] && {
@@ -187,13 +174,9 @@ resolve_npus() {
   fi
 }
 
-# Split the resolved $NPUS into groups of the given size, echoing one
-# space-separated group per line. When the NPU count is an exact multiple of
-# the size the groups are non-overlapping chunks (e.g. 8 NPUs, size 4 ->
-# "0 1 2 3" / "4 5 6 7"); otherwise a final group anchored at the last NPU is
-# appended so both the first and last NPU are covered (e.g. 5 NPUs, size 4 ->
-# "0 1 2 3" / "1 2 3 4"). Groups follow position in $NPUS, so a non-contiguous
-# VALIDATE_NPUS selection is grouped in the order provided (after normalization).
+# Echo $NPUS split into groups of the given size, one per line, in $NPUS order
+# (8 NPUs, size 4 -> "0 1 2 3" / "4 5 6 7"). A remainder adds a final group
+# anchored at the last NPU (5, size 4 -> "0 1 2 3" / "1 2 3 4").
 # Caller must ensure size <= ${#NPUS[@]}.
 npu_groups() {
   local size=$1
@@ -218,3 +201,4 @@ capture_dmesg() {
   local ts="${2:-${TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}}"
   dmesg >"${out_dir}/dmesg_${ts}.log"
 }
+
